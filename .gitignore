@@ -27,3 +27,7 @@ Thumbs.db
 postgres_data/
 redis_data/
 mongo_data/
+
+# ── Implementation Guides ──────────────────────────────────
+PAYNEXUS_IMPLEMENTATION_GUIDE.md
+paynexus_complete_guide.md
