@@ -1,0 +1,29 @@
+# ── Maven Build Artifacts ──────────────────────────────────
+**/target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# ── IntelliJ IDEA ─────────────────────────────────────────
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# ── Environment Variables / Secrets ───────────────────────
+.env
+.env.*
+!.env.example          # Allow the example template to be committed
+
+# ── Logs ─────────────────────────────────────────────────
+*.log
+logs/
+
+# ── OS Files ─────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Docker Volumes ────────────────────────────────────────
+postgres_data/
+redis_data/
+mongo_data/
