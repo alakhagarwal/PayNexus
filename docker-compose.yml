@@ -1,0 +1,116 @@
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # 1. PostgreSQL 16 (Primary Relational Database)
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: paynexus-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASS:-postgres}
+      POSTGRES_DB: ${DB_NAME:-paynexus_wallet}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-paynexus_wallet}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - paynexus-network
+
+  # ---------------------------------------------------------------------------
+  # 2. Redis 7 (Cache, Distributed Locks via Redisson, Idempotency Keys)
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: paynexus-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - paynexus-network
+
+  # ---------------------------------------------------------------------------
+  # Redis Insight (Web GUI for Redis inspection, TTLs, Redisson locks)
+  # ---------------------------------------------------------------------------
+  redisinsight:
+    image: redis/redisinsight:latest
+    container_name: paynexus-redisinsight
+    restart: unless-stopped
+    ports:
+      - "5540:5540"
+    volumes:
+      - redisinsight_data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - paynexus-network
+
+  # ---------------------------------------------------------------------------
+  # 3. Apache Kafka (Event Bus - KRaft Mode, No Zookeeper Required)
+  # ---------------------------------------------------------------------------
+#   kafka:
+#     image: confluentinc/cp-kafka:7.5.0
+#     container_name: paynexus-kafka
+#     restart: unless-stopped
+#     environment:
+#       KAFKA_NODE_ID: 1
+#       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+#       KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092'
+#       KAFKA_PROCESS_ROLES: 'broker,controller'
+#       KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'
+#       KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9092'
+#       KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+#       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+#       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+#       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+#       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+#       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+#       CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+#     ports:
+#       - "9092:9092"
+#     volumes:
+#       - kafka_data:/var/lib/kafka/data
+#     networks:
+#       - paynexus-network
+
+#   # ---------------------------------------------------------------------------
+#   # 4. Zipkin (Distributed Tracing for Inter-Service Calls)
+#   # ---------------------------------------------------------------------------
+#   zipkin:
+#     image: openzipkin/zipkin:latest
+#     container_name: paynexus-zipkin
+#     restart: unless-stopped
+#     ports:
+#       - "9411:9411"
+#     networks:
+#       - paynexus-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  redisinsight_data:
+    driver: local
+#   kafka_data:
+#     driver: local
+
+networks:
+  paynexus-network:
+    driver: bridge
