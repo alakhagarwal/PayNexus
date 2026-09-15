@@ -70,15 +70,17 @@ public class UserController {
 
     /**
      * POST /api/v1/users/{userId}/kyc
-     * Submits KYC document for admin review.
-     * After submission, user's KYC status becomes SUBMITTED.
+     * Submits identity details for admin review (no file uploads needed).
      *
-     * Request: { "documentType": "AADHAAR", "documentUrl": "https://s3.amazonaws.com/..." }
+     * Validates: PAN format, Aadhaar last 4 digits, and age ≥ 18.
+     * After submission, kycStatus becomes SUBMITTED until admin approves or rejects.
+     *
+     * Request: { "panNumber": "ABCDE1234F", "aadhaarLastFour": "1234", "dateOfBirth": "1998-05-20" }
      */
     @PostMapping("/{userId}/kyc")
     public ResponseEntity<ApiResponse<Void>> submitKyc(@PathVariable UUID userId,
                                                         @Valid @RequestBody KycSubmitRequest request) {
         userService.submitKyc(userId, request);
-        return ResponseEntity.ok(ApiResponse.success("KYC documents submitted successfully. Awaiting review.", null));
+        return ResponseEntity.ok(ApiResponse.success("KYC details submitted successfully. Awaiting admin review.", null));
     }
 }

@@ -112,7 +112,7 @@ wallet-service/
     │   │   ├── User.java                       # password_hash, transaction_pin_hash
     │   │   ├── Wallet.java                     # @Version optimistic locking
     │   │   ├── LedgerEntry.java                # IMMUTABLE — no setters on financial fields
-    │   │   └── KycDocument.java
+    │   │   └── UserKyc.java                    # PAN, Aadhaar last 4, DOB — text-based, no file uploads
     │   ├── enums/
     │   │   ├── TransactionType.java            # CREDIT | DEBIT | HOLD | RELEASE
     │   │   ├── KycStatus.java                  # PENDING | SUBMITTED | VERIFIED | REJECTED
@@ -121,7 +121,7 @@ wallet-service/
     │   │   ├── UserRepository.java             # findByEmail, existsByEmail
     │   │   ├── WalletRepository.java           # findByUserId, resetAllDailySpent()
     │   │   ├── LedgerEntryRepository.java      # paginated, sumAmountByWalletIdAndType
-    │   │   └── KycDocumentRepository.java
+    │   │   └── UserKycRepository.java          # findByUserId, findByUser_KycStatus
     │   ├── dto/
     │   │   ├── request/                        # RegisterRequest, LoginRequest, etc.
     │   │   └── response/                       # ApiResponse<T>, WalletResponse, etc.
@@ -149,7 +149,8 @@ wallet-service/
             ├── V1__create_users_table.sql
             ├── V2__create_wallets_table.sql
             ├── V3__create_ledger_entries_table.sql
-            └── V4__create_kyc_documents_table.sql
+            ├── V4__create_kyc_documents_table.sql  ← original (never modified — Flyway rule)
+            └── V5__migrate_kyc_to_text_based.sql   ← drops kyc_documents, creates user_kyc
 ```
 
 ---
@@ -275,20 +276,37 @@ Sets or updates the 6-digit transaction PIN. Required before any P2P transfer.
 ---
 
 #### `POST /api/v1/users/{userId}/kyc`
-Submits a KYC document for admin review. Changes KYC status to `SUBMITTED`.
+Submits identity details for admin review. **No file uploads, no S3** — purely text-based.
+
+Validations performed server-side:
+- `panNumber` must match regex `[A-Z]{5}[0-9]{4}[A-Z]{1}` (e.g. `ABCDE1234F`)
+- `panNumber[3]` must be `'P'` — confirms it is an **individual** PAN, not a company
+- User must be **≥ 18 years old** based on `dateOfBirth`
+- User may re-submit if previously `REJECTED` (record is updated, not duplicated)
+- User cannot re-submit if already `VERIFIED`
 
 **Request Body:**
 ```json
 {
-  "documentType": "AADHAAR",
-  "documentUrl": "https://s3.amazonaws.com/paynexus-kyc/doc_123.pdf"
+  "panNumber": "ABCDE1234F",
+  "aadhaarLastFour": "1234",
+  "dateOfBirth": "1998-05-20"
 }
 ```
 
 **Success Response — `200 OK`:**
 ```json
-{ "success": true, "message": "KYC documents submitted successfully. Awaiting review." }
+{ "success": true, "message": "KYC details submitted successfully. Awaiting admin review." }
 ```
+
+**Error Responses:**
+| Status | Condition |
+|--------|-----------|
+| `400` | Invalid PAN format, Aadhaar not 4 digits, or missing field |
+| `400` | User is under 18 years old |
+| `400` | PAN 4th character is not `'P'` (not an individual PAN) |
+| `400` | KYC is already `VERIFIED` — re-submission not allowed |
+| `404` | User not found |
 
 ---
 
@@ -498,9 +516,28 @@ Content-Type: application/json
 |--------|------|---------|
 | `PUT` | `/admin/users/{userId}/freeze` | Freeze wallet (fraud/compliance) |
 | `PUT` | `/admin/users/{userId}/unfreeze` | Restore frozen wallet |
-| `GET` | `/admin/kyc/pending` | List submitted KYC documents |
-| `PUT` | `/admin/kyc/{userId}/approve?remarks=Verified` | Approve KYC |
-| `PUT` | `/admin/kyc/{userId}/reject?remarks=Blurry document` | Reject KYC |
+| `GET` | `/admin/kyc/pending` | Queue: all SUBMITTED KYC entries awaiting review |
+| `GET` | `/admin/kyc/{userId}` | View KYC details (PAN, Aadhaar last 4, DOB) for one user |
+| `PUT` | `/admin/kyc/{userId}/approve?remarks=Verified` | Approve KYC → sets status to VERIFIED |
+| `PUT` | `/admin/kyc/{userId}/reject?remarks=PAN mismatch` | Reject KYC → sets status to REJECTED |
+
+**Admin KYC Response Example (`GET /admin/kyc/pending`):**
+```json
+[
+  {
+    "userId": "a1b2c3...",
+    "userName": "Rahul Sharma",
+    "userEmail": "rahul@email.com",
+    "kycStatus": "SUBMITTED",
+    "panNumber": "ABCDE1234F",
+    "aadhaarLastFour": "1234",
+    "dateOfBirth": "1998-05-20",
+    "submittedAt": "2026-09-15T10:00:00Z",
+    "reviewedAt": null,
+    "remarks": null
+  }
+]
+```
 
 ---
 
@@ -724,16 +761,19 @@ Redis processes SET NX as a single CPU instruction. Even if 100 concurrent reque
 | `related_user_id` | UUID | Other party in P2P (nullable) |
 | `created_at` | TIMESTAMP | NEVER updated |
 
-### `kyc_documents`
+### `user_kyc`
+Text-based identity verification — **no file uploads, no S3 required**.
+
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | UUID PK | |
-| `user_id` | UUID FK | References users |
-| `document_type` | VARCHAR(50) | AADHAAR/PAN/PASSPORT etc. |
-| `document_url` | VARCHAR(500) | S3/cloud storage URL |
+| `user_id` | UUID FK UNIQUE | One-to-one with users |
+| `pan_number` | VARCHAR(10) | Format: `ABCDE1234F`. 4th char = `'P'` for individuals |
+| `aadhaar_last_four` | VARCHAR(4) | Last 4 digits only (privacy — full Aadhaar never stored) |
+| `date_of_birth` | DATE | Must be ≥ 18 years ago at submission time |
 | `submitted_at` | TIMESTAMP | When user submitted |
 | `reviewed_at` | TIMESTAMP | When admin reviewed (nullable) |
-| `remarks` | VARCHAR(500) | Admin comments |
+| `remarks` | VARCHAR(500) | Admin approval/rejection reason |
 
 ---
 

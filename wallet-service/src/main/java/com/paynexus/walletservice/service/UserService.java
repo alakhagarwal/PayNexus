@@ -7,14 +7,14 @@ import com.paynexus.walletservice.dto.request.SetPinRequest;
 import com.paynexus.walletservice.dto.response.LoginResponse;
 import com.paynexus.walletservice.dto.response.RegisterResponse;
 import com.paynexus.walletservice.dto.response.UserProfileResponse;
-import com.paynexus.walletservice.entity.KycDocument;
 import com.paynexus.walletservice.entity.User;
+import com.paynexus.walletservice.entity.UserKyc;
 import com.paynexus.walletservice.entity.Wallet;
 import com.paynexus.walletservice.enums.KycStatus;
 import com.paynexus.walletservice.exception.EmailAlreadyExistsException;
 import com.paynexus.walletservice.exception.InvalidPinException;
 import com.paynexus.walletservice.exception.UserNotFoundException;
-import com.paynexus.walletservice.repository.KycDocumentRepository;
+import com.paynexus.walletservice.repository.UserKycRepository;
 import com.paynexus.walletservice.repository.UserRepository;
 import com.paynexus.walletservice.repository.WalletRepository;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +22,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.Period;
 import java.util.UUID;
 
 @Service
@@ -30,12 +32,12 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final WalletRepository walletRepository;
-    private final KycDocumentRepository kycDocumentRepository;
+    private final UserKycRepository userKycRepository;
     private final PasswordEncoder passwordEncoder;
 
     /**
      * Registers a new user AND creates their wallet in a single atomic transaction.
-     * If the wallet creation fails, the user creation also rolls back — no orphan users.
+     * If wallet creation fails, user creation also rolls back — no orphan users.
      */
     @Transactional
     public RegisterResponse register(RegisterRequest request) {
@@ -72,7 +74,7 @@ public class UserService {
         }
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-            // Return generic message to avoid revealing if email exists
+            // Generic message — avoids leaking whether email exists
             throw new UserNotFoundException("Invalid email or password");
         }
 
@@ -92,7 +94,6 @@ public class UserService {
      */
     @Transactional
     public void setTransactionPin(UUID userId, SetPinRequest request) {
-        // Additional server-side validation (redundant with @Valid, but defense-in-depth)
         if (!request.getPin().matches("\\d{6}")) {
             throw new InvalidPinException("PIN must be exactly 6 digits");
         }
@@ -105,19 +106,43 @@ public class UserService {
     }
 
     /**
-     * Saves KYC document metadata and marks the user's KYC status as SUBMITTED.
-     * Admin must then review and approve/reject via /admin/kyc/** endpoints.
+     * Submits identity details for KYC verification.
+     *
+     * Validates:
+     *  1. User must be at least 18 years old.
+     *  2. PAN 4th character must be 'P' (confirms it is an individual/person, not a company).
+     *  3. User cannot re-submit if already VERIFIED.
+     *
+     * After submission, kycStatus is set to SUBMITTED for admin review.
      */
     @Transactional
     public void submitKyc(UUID userId, KycSubmitRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(UserNotFoundException::new);
 
-        KycDocument doc = new KycDocument();
-        doc.setUser(user);
-        doc.setDocumentType(request.getDocumentType());
-        doc.setDocumentUrl(request.getDocumentUrl());
-        kycDocumentRepository.save(doc);
+        // Block re-submission if already verified
+        if (user.getKycStatus() == KycStatus.VERIFIED) {
+            throw new IllegalStateException("KYC is already verified for this user.");
+        }
+
+        // Age check — user must be at least 18
+        int age = Period.between(request.getDateOfBirth(), LocalDate.now()).getYears();
+        if (age < 18) {
+            throw new IllegalArgumentException("You must be at least 18 years old to complete KYC.");
+        }
+
+        // PAN individual check — 4th character must be 'P' (Person)
+        if (request.getPanNumber().charAt(3) != 'P') {
+            throw new IllegalArgumentException("PAN number does not appear to be an individual PAN (4th character must be 'P').");
+        }
+
+        // Create or update the KYC record (allow re-submission after REJECTED)
+        UserKyc kyc = userKycRepository.findByUserId(userId).orElse(new UserKyc());
+        kyc.setUser(user);
+        kyc.setPanNumber(request.getPanNumber().toUpperCase());
+        kyc.setAadhaarLastFour(request.getAadhaarLastFour());
+        kyc.setDateOfBirth(request.getDateOfBirth());
+        userKycRepository.save(kyc);
 
         user.setKycStatus(KycStatus.SUBMITTED);
         userRepository.save(user);
