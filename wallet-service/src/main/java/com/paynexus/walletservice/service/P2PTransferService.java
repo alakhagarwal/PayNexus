@@ -80,10 +80,9 @@ public class P2PTransferService {
             try {
                 doTransfer(request);
             } finally {
-                // Safe unlock: only unlocks if current thread holds both locks
-                if (multiLock.isHeldByCurrentThread()) {
-                    multiLock.unlock();
-                }
+                // RedissonMultiLock does not implement isHeldByCurrentThread() (throws UnsupportedOperationException).
+                // tryLock() already verified acquisition, so unlocking directly is safe.
+                multiLock.unlock();
             }
 
         } catch (InterruptedException e) {

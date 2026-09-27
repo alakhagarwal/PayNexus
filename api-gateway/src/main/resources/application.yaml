@@ -40,10 +40,10 @@ spring:
             - Path=/admin/**
 
         # 5. Internal Inter-Service Wallet Endpoints (Holds, Settlements)
-        - id: wallet-service-internal
-          uri: lb://wallet-service
-          predicates:
-            - Path=/internal/wallet/**
+        # - id: wallet-service-internal
+        #   uri: lb://wallet-service
+        #   predicates:
+        #     - Path=/internal/wallet/**
 
       # Global Cross-Origin Resource Sharing (CORS) Configuration
       globalcors:

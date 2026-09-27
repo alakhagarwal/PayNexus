@@ -1,0 +1,1733 @@
+{
+  "info": {
+    "_postman_id": "cda3ec60-c262-49cb-8d99-0652cd3effce",
+    "name": "PayNexus Wallet Service API",
+    "description": "Comprehensive automated test suite for PayNexus Wallet Service. Tests User Lifecycle, Auth, PIN, KYC Submission & Review, Wallet Balance, P2P Transfers with Redisson MultiLock & Idempotency, Ledger History, Admin Freeze/Unfreeze, and Inter-Service Saga Holds & Settlements.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "01 - Health & System",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Service and dependencies are UP\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.status).to.eql(\"UP\");",
+                  "    pm.expect(json.components.db.status).to.eql(\"UP\");",
+                  "    pm.expect(json.components.redis.status).to.eql(\"UP\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 - User Lifecycle & Auth",
+      "item": [
+        {
+          "name": "Register New User",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const ts = Date.now();",
+                  "pm.environment.set(\"testUserEmail\", \"tester_\" + ts + \"@paynexus.io\");"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 201 Created\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test(\"User and Wallet created successfully\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.data.userId).to.be.a(\"string\");",
+                  "    pm.expect(json.data.walletId).to.be.a(\"string\");",
+                  "    pm.environment.set(\"testUserId\", json.data.userId);",
+                  "    pm.environment.set(\"testWalletId\", json.data.walletId);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test Automation User\",\n  \"email\": \"{{testUserEmail}}\",\n  \"password\": \"{{testUserPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "register"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Login - Valid Credentials",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Login returns correct userId\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.data.userId).to.eql(pm.environment.get(\"testUserId\"));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{testUserEmail}}\",\n  \"password\": \"{{testUserPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Login - Invalid Password (Negative)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 404 (anti-enumeration check)\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "pm.test(\"Failure message is returned\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.false;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{testUserEmail}}\",\n  \"password\": \"WrongPassword999!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Profile - Initial State",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Profile matches new user defaults\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.data.userId).to.eql(pm.environment.get(\"testUserId\"));",
+                  "    pm.expect(json.data.hasPinSet).to.be.false;",
+                  "    pm.expect(json.data.kycStatus).to.eql(\"PENDING\");",
+                  "    pm.expect(json.data.active).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{testUserId}}/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{testUserId}}",
+                "profile"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 - PIN Management",
+      "item": [
+        {
+          "name": "Set Transaction PIN",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"PIN set confirmation received\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.message).to.include(\"PIN set successfully\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pin\": \"{{testUserPin}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{testUserId}}/pin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{testUserId}}",
+                "pin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Set Invalid PIN - Too Short (Negative)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 400 Bad Request\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "pm.test(\"Validation error on pin format\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.false;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pin\": \"123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{testUserId}}/pin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{testUserId}}",
+                "pin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Verify PIN is Set in Profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"hasPinSet is now true\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.data.hasPinSet).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{testUserId}}/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{testUserId}}",
+                "profile"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 - KYC Lifecycle",
+      "item": [
+        {
+          "name": "Submit KYC Details",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"KYC submission message returned\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.message).to.include(\"submitted successfully\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"panNumber\": \"ABCPE1234F\",\n  \"aadhaarLastFour\": \"7890\",\n  \"dateOfBirth\": \"1994-08-20\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{testUserId}}/kyc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{testUserId}}",
+                "kyc"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Verify Status is SUBMITTED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"KYC status is SUBMITTED\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.data.kycStatus).to.eql(\"SUBMITTED\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{testUserId}}/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{testUserId}}",
+                "profile"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin - Get Pending KYC Queue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Queue contains test user\", function () {",
+                  "    var json = pm.response.json();",
+                  "    var found = json.data.some(function(item) { return item.userId === pm.environment.get(\"testUserId\"); });",
+                  "    pm.expect(found).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/kyc/pending",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "kyc",
+                "pending"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin - Inspect User KYC Record",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"KYC fields match submitted data\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.data.panNumber).to.eql(\"ABCPE1234F\");",
+                  "    pm.expect(json.data.aadhaarLastFour).to.eql(\"7890\");",
+                  "    pm.expect(json.data.kycStatus).to.eql(\"SUBMITTED\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/kyc/{{testUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "kyc",
+                "{{testUserId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin - Approve KYC",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Approval confirmed\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/kyc/{{testUserId}}/approve?remarks=Approved+via+Postman+Automated+Suite",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "kyc",
+                "{{testUserId}}",
+                "approve"
+              ],
+              "query": [
+                {
+                  "key": "remarks",
+                  "value": "Approved+via+Postman+Automated+Suite"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Verify Status is now VERIFIED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"User kycStatus is VERIFIED\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.data.kycStatus).to.eql(\"VERIFIED\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{testUserId}}/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{testUserId}}",
+                "profile"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 - Wallet Operations & Balance",
+      "item": [
+        {
+          "name": "Get Wallet - Initial Balance",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Available balance starts at 0.00\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(parseFloat(json.data.availableBalance)).to.eql(0.00);",
+                  "    pm.expect(json.data.frozen).to.be.false;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallet/{{testUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "{{testUserId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Internal Credit - Deposit 25,000",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.environment.set(\"creditRefId\", \"credit-\" + Date.now());"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Wallet credited successfully\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{testUserId}}\",\n  \"amount\": 25000,\n  \"referenceId\": \"{{creditRefId}}\",\n  \"narration\": \"Postman Automated Salary Deposit\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/internal/wallet/credit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "wallet",
+                "credit"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Verify Wallet Credited to 25,000",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Available balance is 25000.00\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(parseFloat(json.data.availableBalance)).to.eql(25000.00);",
+                  "    pm.expect(parseFloat(json.data.remainingDailyLimit)).to.eql(50000.00);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallet/{{testUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "{{testUserId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 - P2P Transfers & Security Guards",
+      "item": [
+        {
+          "name": "Transfer 5,000 to Receiver (Success)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const key = 'idem-' + Date.now() + '-' + Math.floor(Math.random() * 100000);",
+                  "pm.environment.set('transferIdempotencyKey', key);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Transfer success message\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.message).to.include(\"successful\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Idempotency-Key",
+                "value": "{{transferIdempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"senderId\": \"{{testUserId}}\",\n  \"receiverId\": \"{{existingReceiverUserId}}\",\n  \"amount\": 5000,\n  \"transactionPin\": \"{{testUserPin}}\",\n  \"idempotencyKey\": \"{{transferIdempotencyKey}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallet/transfer",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "transfer"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Duplicate Idempotency Key Guard (Negative)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 409 Conflict\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "pm.test(\"Duplicate key rejected\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.false;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Idempotency-Key",
+                "value": "{{transferIdempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"senderId\": \"{{testUserId}}\",\n  \"receiverId\": \"{{existingReceiverUserId}}\",\n  \"amount\": 5000,\n  \"transactionPin\": \"{{testUserPin}}\",\n  \"idempotencyKey\": \"{{transferIdempotencyKey}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallet/transfer",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "transfer"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Invalid PIN Guard (Negative)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const key = 'idem-' + Date.now() + '-' + Math.floor(Math.random() * 100000);",
+                  "pm.environment.set('transferIdempotencyKey', key);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 401 Unauthorized\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "pm.test(\"Incorrect PIN error returned\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.false;",
+                  "    pm.expect(json.message).to.include(\"PIN\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Idempotency-Key",
+                "value": "{{transferIdempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"senderId\": \"{{testUserId}}\",\n  \"receiverId\": \"{{existingReceiverUserId}}\",\n  \"amount\": 100,\n  \"transactionPin\": \"000000\",\n  \"idempotencyKey\": \"{{transferIdempotencyKey}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallet/transfer",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "transfer"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Insufficient Balance Guard (Negative)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const key = 'idem-' + Date.now() + '-' + Math.floor(Math.random() * 100000);",
+                  "pm.environment.set('transferIdempotencyKey', key);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 422 Unprocessable Entity\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "pm.test(\"Insufficient balance message returned\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.false;",
+                  "    pm.expect(json.message).to.include(\"Insufficient balance\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Idempotency-Key",
+                "value": "{{transferIdempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"senderId\": \"{{testUserId}}\",\n  \"receiverId\": \"{{existingReceiverUserId}}\",\n  \"amount\": 999999,\n  \"transactionPin\": \"{{testUserPin}}\",\n  \"idempotencyKey\": \"{{transferIdempotencyKey}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallet/transfer",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "transfer"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Verify Sender Balance & Daily Limit",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Balance reduced by 5,000 and dailySpent updated\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(parseFloat(json.data.availableBalance)).to.eql(20000.00);",
+                  "    pm.expect(parseFloat(json.data.dailySpent)).to.eql(5000.00);",
+                  "    pm.expect(parseFloat(json.data.remainingDailyLimit)).to.eql(45000.00);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallet/{{testUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "{{testUserId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 - Ledger History",
+      "item": [
+        {
+          "name": "Get Paginated Ledger Entries",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Ledger has CREDIT and DEBIT records\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.data.content.length).to.be.at.least(2);",
+                  "    var types = json.data.content.map(function(e) { return e.transactionType; });",
+                  "    pm.expect(types).to.include(\"CREDIT\");",
+                  "    pm.expect(types).to.include(\"DEBIT\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallet/{{testUserId}}/ledger?page=0&size=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "{{testUserId}}",
+                "ledger"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Ledger Summary (Credits vs Debits)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Summary matches totals (25,000 credit, 5,000 debit)\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(parseFloat(json.data.totalCredits)).to.eql(25000.00);",
+                  "    pm.expect(parseFloat(json.data.totalDebits)).to.eql(5000.00);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallet/{{testUserId}}/ledger/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "{{testUserId}}",
+                "ledger",
+                "summary"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 - Admin Account Controls",
+      "item": [
+        {
+          "name": "Admin - Freeze User Wallet",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Wallet freeze message returned\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.message).to.include(\"frozen\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/{{testUserId}}/freeze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users",
+                "{{testUserId}}",
+                "freeze"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Verify Wallet is Frozen",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"frozen property is true\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.data.frozen).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallet/{{testUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "{{testUserId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Attempt Transfer While Frozen (Negative)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const key = 'idem-' + Date.now() + '-' + Math.floor(Math.random() * 100000);",
+                  "pm.environment.set('transferIdempotencyKey', key);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 403 Forbidden\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});",
+                  "pm.test(\"Wallet frozen error message\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.false;",
+                  "    pm.expect(json.message).to.include(\"frozen\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Idempotency-Key",
+                "value": "{{transferIdempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"senderId\": \"{{testUserId}}\",\n  \"receiverId\": \"{{existingReceiverUserId}}\",\n  \"amount\": 100,\n  \"transactionPin\": \"{{testUserPin}}\",\n  \"idempotencyKey\": \"{{transferIdempotencyKey}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallet/transfer",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "transfer"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin - Unfreeze User Wallet",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Wallet unfrozen message returned\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.message).to.include(\"unfrozen\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/{{testUserId}}/unfreeze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users",
+                "{{testUserId}}",
+                "unfreeze"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Verify Wallet is Unfrozen",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"frozen property is false\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.data.frozen).to.be.false;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallet/{{testUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "{{testUserId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 - Inter-Service Saga Operations",
+      "item": [
+        {
+          "name": "Internal - Check Balance",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Returns available and reserved balance\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(parseFloat(json.data.availableBalance)).to.eql(20000.00);",
+                  "    pm.expect(parseFloat(json.data.reservedBalance)).to.eql(0.00);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/internal/wallet/{{testUserId}}/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "wallet",
+                "{{testUserId}}",
+                "balance"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Hold Funds - Stock BUY Step 1",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.environment.set(\"holdReferenceId\", \"saga-hold-\" + Date.now());"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Funds held successfully response\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.data.success).to.be.true;",
+                  "    pm.expect(json.data.holdReference).to.eql(pm.environment.get(\"holdReferenceId\"));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{testUserId}}\",\n  \"amount\": 3000,\n  \"referenceId\": \"{{holdReferenceId}}\",\n  \"reason\": \"Stock BUY 5 INFY Shares\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/internal/wallet/hold",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "wallet",
+                "hold"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Verify Reserved Balance (Hold Active)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"3,000 in reserved balance\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(parseFloat(json.data.availableBalance)).to.eql(17000.00);",
+                  "    pm.expect(parseFloat(json.data.reservedBalance)).to.eql(3000.00);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallet/{{testUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "{{testUserId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Release Funds - Stock BUY Compensation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Release message confirmed\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{testUserId}}\",\n  \"amount\": 3000,\n  \"holdRef\": \"{{holdReferenceId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/internal/wallet/release",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "wallet",
+                "release"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Verify Balance Restored to 20,000",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Reserved is 0 and available is 20000.00\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(parseFloat(json.data.availableBalance)).to.eql(20000.00);",
+                  "    pm.expect(parseFloat(json.data.reservedBalance)).to.eql(0.00);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallet/{{testUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "{{testUserId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Hold Funds - For Settlement Test",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.environment.set(\"settleReferenceId\", \"saga-settle-\" + Date.now());"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{testUserId}}\",\n  \"amount\": 2000,\n  \"referenceId\": \"{{settleReferenceId}}\",\n  \"reason\": \"Stock BUY 2 RELIANCE Shares\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/internal/wallet/hold",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "wallet",
+                "hold"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Settle Funds - Stock BUY Step 3",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Settlement confirmed\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{testUserId}}\",\n  \"amount\": 2000,\n  \"holdRef\": \"{{settleReferenceId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/internal/wallet/settle",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "wallet",
+                "settle"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Verify Balance Permanently Deducted",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Available balance is now 18000.00\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(parseFloat(json.data.availableBalance)).to.eql(18000.00);",
+                  "    pm.expect(parseFloat(json.data.reservedBalance)).to.eql(0.00);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallet/{{testUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "{{testUserId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "10 - Payments (Razorpay)",
+      "item": [
+        {
+          "name": "Initiate Payment Order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 (live keys) or 502 (dummy keys upstream rejection)\", function () {",
+                  "    pm.expect([200, 502]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test(\"Payment response format validated\", function () {",
+                  "    var json = pm.response.json();",
+                  "    if (pm.response.code === 200) {",
+                  "        pm.expect(json.success).to.be.true;",
+                  "        pm.expect(json.data.razorpayOrderId).to.be.a(\"string\");",
+                  "        pm.expect(json.data.currency).to.eql(\"INR\");",
+                  "    } else {",
+                  "        pm.expect(json.success).to.be.false;",
+                  "        pm.expect(json.message).to.include(\"Payment gateway error\");",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{testUserId}}\",\n  \"amount\": 1000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/initiate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "initiate"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

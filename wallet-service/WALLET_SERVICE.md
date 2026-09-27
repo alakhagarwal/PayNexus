@@ -659,7 +659,7 @@ if (!acquired) throw new IllegalStateException("Wallets busy, retry");
 try {
     doTransfer(request);  // @Transactional: debit+credit+2 ledger entries
 } finally {
-    if (multiLock.isHeldByCurrentThread()) multiLock.unlock();
+    multiLock.unlock();
 }
 ```
 
@@ -813,3 +813,42 @@ All exceptions are handled centrally by `GlobalExceptionHandler` and converted t
 | Schema management | **Flyway** | `ddl-auto: validate` in production — never `create` or `update` |
 | Ledger design | **Append-only, no setters** | Immutable audit trail — no financial record ever modified |
 | Daily limit reset | **@Scheduled midnight cron** | `resetAllDailySpent()` resets all wallet daily_spent to 0 |
+
+---
+
+## Postman Automated Test Suite
+
+A comprehensive Postman Collection and Environment suite has been created and synced with the Postman Cloud workspace **PayNexus** and saved locally under `wallet-service/postman/`.
+
+### 1. Artifacts & File Locations
+- **Collection File**: [PayNexus_Wallet_Service.postman_collection.json](file:///c:/Users/ALAKH/PayNexus/wallet-service/postman/PayNexus_Wallet_Service.postman_collection.json)
+- **Environment File**: [PayNexus_Dev.postman_environment.json](file:///c:/Users/ALAKH/PayNexus/wallet-service/postman/PayNexus_Dev.postman_environment.json)
+- **Postman Cloud Workspace**: `PayNexus` (`0fc284b6-fcca-4a8c-8456-ff21631d0f7b`)
+- **Postman Cloud Collection ID**: `cda3ec60-c262-49cb-8d99-0652cd3effce` (`50886880-cda3ec60-c262-49cb-8d99-0652cd3effce`)
+- **Postman Cloud Environment ID**: `039d07d8-4ce7-4fcf-99a5-005d93dc2039` ("PayNexus - Local Dev")
+
+### 2. Test Coverage Matrix (38 Requests, 75 Assertions)
+
+| Folder | Scope | Tests Included |
+| :--- | :--- | :--- |
+| **01 - Health & System** | Actuator & Infra | Service status `UP`, DB connectivity `UP`, Redis cluster `UP` |
+| **02 - User Lifecycle & Auth** | Registration, Login, Profile | User & wallet atomic creation (201), valid login (200), bad password anti-enumeration (404), initial profile states |
+| **03 - PIN Management** | Security & Authorization | Set 6-digit PIN (200), format validation failure for < 6 digits (400), profile reflection `hasPinSet: true` |
+| **04 - KYC Lifecycle** | Compliance & Admin Queue | Identity submit (200), state `SUBMITTED`, admin pending queue listing, admin detail inspection, admin approval (200), verified status check |
+| **05 - Wallet Balance & Credit** | Balance & Deposits | Zero-balance verification, internal credit/deposit (200), available balance computation |
+| **06 - P2P Transfers & Guards** | MultiLock, Idempotency, Limits | Successful P2P transfer (200), duplicate idempotency key guard (409), wrong PIN guard (401), insufficient funds guard (422), daily limit deductions |
+| **07 - Ledger History** | Double-Entry Accounting | Paginated immutable ledger pagination, CREDIT + DEBIT verification, ledger summary totals |
+| **08 - Admin Account Controls** | Fraud & Compliance Holds | Admin wallet freeze (200), frozen state verification, transfer rejection while frozen (403), admin unfreeze (200) |
+| **09 - Inter-Service Saga Operations** | Distributed Transactions | Internal balance query (200), Stock BUY Step 1 fund hold (200), reserved balance check, compensation release (200), Step 3 permanent settlement (200) |
+| **10 - Payments (Razorpay)** | Upstream Payment Gateway | Payment order initiation, response schema validation (200 with live keys / 502 with dummy sandbox keys) |
+
+### 3. Running the Test Suite via Newman (CLI)
+
+Run the full automated suite locally against the running `wallet-service`:
+```bash
+npx -y newman run "wallet-service/postman/PayNexus_Wallet_Service.postman_collection.json" \
+  -e "wallet-service/postman/PayNexus_Dev.postman_environment.json" \
+  --reporters cli
+```
+**Test Result**: 38 requests executed, 75 assertions passed, **0 failures (100% pass rate)**.
+
