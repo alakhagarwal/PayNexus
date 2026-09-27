@@ -29,6 +29,7 @@
         <module>discovery-server</module>
         <module>api-gateway</module>
         <module>wallet-service</module>
+        <module>order-engine-service</module>
     </modules>
 
     <properties>
