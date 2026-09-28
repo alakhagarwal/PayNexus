@@ -13,15 +13,8 @@ import java.util.UUID;
 @Repository
 public interface StockOrderRepository extends JpaRepository<StockOrder, UUID> {
 
-    /** All orders for a user, newest first. Used for order history endpoint. */
     List<StockOrder> findByUserIdOrderByCreatedAtDesc(UUID userId);
-
-    /** Orders for a user filtered by status. */
     List<StockOrder> findByUserIdAndStatus(UUID userId, OrderStatus status);
-
-    /** Idempotency key lookup - prevents duplicate order submissions. */
     Optional<StockOrder> findByIdempotencyKey(String idempotencyKey);
-
-    /** All orders for a specific symbol. */
     List<StockOrder> findBySymbol(String symbol);
 }

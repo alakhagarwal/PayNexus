@@ -2,7 +2,7 @@
 
 > **Port**: `8083` | **Spring Boot**: `3.3.4` | **Spring Cloud**: `2023.0.3`  
 > **Databases**: PostgreSQL + Redis  
-> **Status**: Phase 1 complete ✅ (Market Feed + Price Endpoints)
+> **Status**: Phase 1 ✅ (Market Feed) | Phase 2 ✅ (Price Alerts Engine)
 
 ---
 
@@ -31,13 +31,22 @@ order-engine-service (8083)
 │   ├── getPriceBySymbol()    → reads Redis price: + price_history: keys
 │   └── getFeedStatus()       → reads SimulatedMarketFeed metadata
 │
+├── AlertController           POST|GET|DELETE /api/v1/alerts/**  ✅ Phase 2
+│   ├── createAlert()         → validates, saves PriceAlert entity
+│   ├── getActiveAlerts()     → findByUserIdAndIsActiveTrue()
+│   └── cancelAlert()         → soft-delete (isActive=false)
+│
 ├── SimulatedMarketFeed       @Scheduled every 2 seconds
 │   ├── Applies ±0.2% Gaussian fluctuation to 10 NSE symbols
 │   ├── Writes price:{SYMBOL} to Redis
 │   ├── Maintains price_history:{SYMBOL} list (last 20 ticks, cap at index 19)
-│   └── Calls PriceAlertService.checkAlerts() after each tick
+│   └── Calls PriceAlertService.checkAlerts() after each tick ← wired to DB
 │
-├── PriceAlertService         (stub — Phase 2)
+├── PriceAlertService         Full implementation ✅ Phase 2
+│   ├── checkAlerts()         → ABOVE/BELOW threshold check, sets triggeredAt
+│   ├── createAlert()         → symbol validation + persist
+│   ├── getActiveAlerts()     → read-only query
+│   └── cancelAlert()         → soft delete with 400 guard (already inactive)
 │
 ├── MarketService             Business logic layer
 │
@@ -66,7 +75,7 @@ order-engine-service (8083)
 | Phase | Feature | Status |
 |---|---|---|
 | **Phase 1** | Project setup, Flyway migrations, Simulated Market Feed | ✅ Complete |
-| **Phase 2** | Price Alerts engine | ⏳ Pending |
+| **Phase 2** | Price Alerts engine (CRUD + auto-trigger) | ✅ Complete |
 | **Phase 3** | Stock Order Saga (BUY/SELL) | ⏳ Pending |
 | **Phase 4** | Portfolio & P&L | ⏳ Pending |
 | **Phase 5** | Upstox OAuth + Live Market Feed | ⏳ Pending |
@@ -112,13 +121,13 @@ DB_USER=postgres DB_PASS=yourpassword \
 | `GET` | `/api/v1/market/prices/{symbol}` | Single stock price + 20-tick history | None |
 | `GET` | `/api/v1/market/feed-status` | Feed mode (SIMULATION/LIVE) + metadata | None |
 
-### Phase 2 — Price Alert Endpoints (Planned)
+### Phase 2 — Price Alert Endpoints ✅
 
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api/v1/alerts` | Create a price alert |
-| `GET` | `/api/v1/alerts/{userId}` | Get all active alerts for user |
-| `DELETE` | `/api/v1/alerts/{alertId}` | Delete/deactivate an alert |
+| Method | Path | Description | Auth |
+|---|---|---|---|
+| `POST` | `/api/v1/alerts` | Create a price alert | None |
+| `GET` | `/api/v1/alerts/{userId}` | Get all active alerts for a user | None |
+| `DELETE` | `/api/v1/alerts/{alertId}` | Soft-cancel an alert | None |
 
 ### Phase 3 — Order Endpoints (Planned)
 
@@ -265,8 +274,9 @@ Handled by `GlobalExceptionHandler` (`@RestControllerAdvice`):
 
 | Exception | HTTP Status | When Thrown |
 |---|---|---|
-| `ResourceNotFoundException` | `404 Not Found` | Unknown stock symbol |
-| `IllegalArgumentException` | `400 Bad Request` | Invalid input parameters |
+| `ResourceNotFoundException` | `404 Not Found` | Unknown symbol / alert ID not found |
+| `IllegalArgumentException` | `400 Bad Request` | Unsupported symbol, already-inactive cancel |
+| `MethodArgumentNotValidException` | `400 Bad Request` | `@Valid` failures (missing fields, bad direction) |
 | `Exception` (catch-all) | `500 Internal Server Error` | Unexpected failures |
 
 **All errors use the same format:**
@@ -349,13 +359,15 @@ CREATE TABLE price_alerts (
 
 ### Collection in PayNexus Workspace
 
-**Collection**: `PayNexus - Order Engine Service`  
-**Environment**: `PayNexus - Local Dev` (select this before running)  
-**Key env variable**: `orderEngineUrl = http://localhost:8083`
+**Collection**: `PayNexus - Order Engine Service` (ID: `16f81ca6-8521-4bab-88e2-7450382428ec`)  
+**Environment**: `PayNexus - Local Dev` — select before running  
+**Key env variables**: `orderEngineUrl = http://localhost:8083`, `aaravId`, `priyaId`
 
-> The `orderEngineUrl` variable has been added to the **PayNexus - Local Dev** environment.
+Folders inside the collection:
+- `Market Data` — Phase 1 (7 requests)
+- `Price Alerts (Phase 2)` — Phase 2 (12 requests)
 
-### Newman Results (Phase 1 — Market Data)
+### Newman Results — Phase 1 (Market Data)
 
 ```
 PayNexus - Order Engine Service
@@ -378,13 +390,43 @@ PayNexus - Order Engine Service
 Total run duration: 809ms | Avg response time: 36ms
 ```
 
+### Newman Results — Phase 2 (Price Alerts)
+
+```
+PayNexus - Order Engine Phase 2 (Price Alerts)
+
+  1. Create Alert (ABOVE - persists)                  [201 Created ]  ✅ 5 assertions
+  2. Create Alert (BELOW - auto-triggers)             [201 Created ]  ✅ 4 assertions
+  3. Create Alert (Validation: invalid direction)     [400 Bad Req ]  ✅ 3 assertions
+  4. Create Alert (Validation: unsupported symbol)    [400 Bad Req ]  ✅ 3 assertions
+  5. Get Active Alerts (Aarav)                        [200 OK      ]  ✅ 5 assertions
+  6. Get Active Alerts (empty user)                   [200 OK      ]  ✅ 2 assertions
+  7. Feed Status (wait 4s for auto-trigger)           [200 OK      ]  ✅ 2 assertions
+  8. Verify auto-triggered alert gone (Priya)         [200 OK      ]  ✅ 2 assertions
+  9. Cancel Alert (soft delete)                       [200 OK      ]  ✅ 3 assertions
+  10. Cancel Already Inactive Alert                   [400 Bad Req ]  ✅ 3 assertions
+  11. Cancel Non-existent Alert                       [404 Not Found]  ✅ 3 assertions
+  12. Verify Aarav alerts empty after cancel          [200 OK      ]  ✅ 2 assertions
+
+┌─────────────────────────┬──────────┬────────┐
+│                         │ executed │ failed │
+├─────────────────────────┼──────────┼────────┤
+│ iterations              │        1 │      0 │
+│ requests                │       12 │      0 │
+│ test-scripts            │       12 │      0 │
+│ assertions              │       37 │      0 │
+└─────────────────────────┴──────────┴────────┘
+Total run duration: 5.1s | Avg response time: 11ms
+```
+
 ### Running Tests Locally
 
 ```bash
-# From project root
-npx newman run order-engine-service/postman/PayNexus_OrderEngine_MarketData.postman_collection.json \
-  --env-var "orderEngineUrl=http://localhost:8083" \
-  --reporters cli
+# Phase 1 - Market Data
+npx newman run order-engine-service/postman/PayNexus_OrderEngine_MarketData.postman_collection.json --reporters cli
+
+# Phase 2 - Price Alerts
+npx newman run order-engine-service/postman/PayNexus_Alerts_Phase2.postman_collection.json --reporters cli
 ```
 
 ---
@@ -411,4 +453,133 @@ The `@Scheduled(fixedDelay = 2000)` in `SimulatedMarketFeed` requires `@EnableSc
 
 ---
 
-*Last Updated: 2026-09-28 | PayNexus — Alakh Agarwal | LNMIIT Jaipur*
+---
+
+## Phase 2 — Price Alerts — Full Request/Response Reference
+
+### `POST /api/v1/alerts`
+
+Create a price alert. Auto-triggers when `SimulatedMarketFeed` crosses the threshold.
+
+**Request Body** (`Content-Type: application/json`):
+```json
+{
+  "userId": "b595ea4c-4baa-48a0-84ec-b4dfc272c47c",
+  "symbol": "RELIANCE",
+  "targetPrice": 2500.00,
+  "direction": "ABOVE"
+}
+```
+
+| Field | Type | Validation | Notes |
+|---|---|---|---|
+| `userId` | `UUID` | `@NotNull` | Must be a valid UUID |
+| `symbol` | `String` | `@NotBlank` | One of 10 supported NSE symbols (case-insensitive) |
+| `targetPrice` | `BigDecimal` | `@NotNull`, `@DecimalMin("0.01")` | Must be positive |
+| `direction` | `String` | `@Pattern(ABOVE\|BELOW)` | Exactly `ABOVE` or `BELOW` |
+
+**Response `201 Created`**:
+```json
+{
+  "success": true,
+  "message": "Price alert created successfully",
+  "data": {
+    "alertId": "4b1c486d-1a4a-44fe-bc52-654dde5a72ec",
+    "userId": "b595ea4c-4baa-48a0-84ec-b4dfc272c47c",
+    "symbol": "RELIANCE",
+    "targetPrice": 2500.00,
+    "direction": "ABOVE",
+    "isActive": true,
+    "triggeredAt": null,
+    "createdAt": "2026-09-29T00:10:00Z"
+  }
+}
+```
+
+**Response `400 Bad Request`** (validation failure):
+```json
+{ "success": false, "message": "direction: must match \"ABOVE|BELOW\"" }
+```
+
+**Response `400 Bad Request`** (unsupported symbol):
+```json
+{ "success": false, "message": "Symbol 'DOGECOIN' is not supported. Supported: RELIANCE, TCS, ..." }
+```
+
+---
+
+### `GET /api/v1/alerts/{userId}`
+
+Returns **only active** (`isActive=true`) alerts for a user. Triggered/cancelled alerts are excluded.
+
+**Path Parameter**: `userId` — UUID of the user.
+
+**Response `200 OK`** (with alerts):
+```json
+{
+  "success": true,
+  "message": "Found 2 active alert(s)",
+  "data": [
+    {
+      "alertId": "4b1c486d-...",
+      "userId": "b595ea4c-...",
+      "symbol": "RELIANCE",
+      "targetPrice": 2500.00,
+      "direction": "ABOVE",
+      "isActive": true,
+      "triggeredAt": null,
+      "createdAt": "2026-09-29T00:10:00Z"
+    }
+  ]
+}
+```
+
+**Response `200 OK`** (no alerts / unknown user):
+```json
+{ "success": true, "message": "Found 0 active alert(s)", "data": [] }
+```
+> Unknown `userId` returns an empty list — **not** a 404.
+
+---
+
+### `DELETE /api/v1/alerts/{alertId}`
+
+Soft-cancels an alert — sets `isActive=false`. Never hard-deletes (keeps audit history).
+
+**Path Parameter**: `alertId` — UUID of the alert to cancel.
+
+**Response `200 OK`**:
+```json
+{ "success": true, "message": "Alert cancelled successfully" }
+```
+
+**Response `400 Bad Request`** (already inactive):
+```json
+{ "success": false, "message": "Alert <uuid> is already inactive." }
+```
+
+**Response `404 Not Found`** (doesn't exist):
+```json
+{ "success": false, "message": "Alert not found: <uuid>" }
+```
+
+---
+
+### Auto-Trigger Behaviour
+
+After every `SimulatedMarketFeed` tick (every ~2s), `PriceAlertService.checkAlerts(symbol, price)` is called:
+
+```
+ABOVE alert: triggers when currentPrice >= targetPrice
+BELOW alert: triggers when currentPrice <= targetPrice
+```
+
+On trigger:
+- `isActive` → `false`
+- `triggeredAt` → `OffsetDateTime.now()`
+- Persisted via `alertRepository.save(alert)`
+- Logged: `Alert TRIGGERED: alertId=... userId=... symbol=... direction=... target=... currentPrice=...`
+
+---
+
+*Last Updated: 2026-09-29 | PayNexus — Alakh Agarwal | LNMIIT Jaipur*

@@ -1,0 +1,295 @@
+{
+  "info": {
+    "name": "PayNexus - Order Engine - Phase 2 Price Alerts",
+    "_postman_id": "alerts-phase2-collection",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Phase 2: Price Alerts Engine — create, list and cancel price alerts. Also covers auto-trigger and validation error scenarios."
+  },
+  "item": [
+    {
+      "name": "Phase 2 - Price Alerts",
+      "item": [
+        {
+          "name": "1. Create Alert - RELIANCE ABOVE (will auto-trigger)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('success is true', () => pm.expect(body.success).to.be.true);",
+                  "pm.test('message contains created', () => pm.expect(body.message).to.include('created'));",
+                  "pm.test('alertId is present', () => pm.expect(body.data.alertId).to.be.a('string'));",
+                  "pm.test('symbol is RELIANCE', () => pm.expect(body.data.symbol).to.eql('RELIANCE'));",
+                  "pm.test('direction is ABOVE', () => pm.expect(body.data.direction).to.eql('ABOVE'));",
+                  "pm.test('isActive is true', () => pm.expect(body.data.isActive).to.be.true);",
+                  "pm.environment.set('alertId_reliance', body.data.alertId);",
+                  "pm.environment.set('testUserId', pm.request.body.raw ? JSON.parse(pm.request.body.raw).userId : 'b595ea4c-4baa-48a0-84ec-b4dfc272c47c');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"b595ea4c-4baa-48a0-84ec-b4dfc272c47c\",\n  \"symbol\": \"RELIANCE\",\n  \"targetPrice\": 1.00,\n  \"direction\": \"ABOVE\"\n}"
+            },
+            "url": {"raw": "{{orderEngineUrl}}/api/v1/alerts", "host": ["{{orderEngineUrl}}"], "path": ["api", "v1", "alerts"]}
+          }
+        },
+        {
+          "name": "2. Create Alert - TCS BELOW (cancel test)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('success is true', () => pm.expect(body.success).to.be.true);",
+                  "pm.test('alertId is UUID', () => pm.expect(body.data.alertId).to.match(/^[0-9a-f-]{36}$/));",
+                  "pm.test('symbol is TCS', () => pm.expect(body.data.symbol).to.eql('TCS'));",
+                  "pm.test('direction is BELOW', () => pm.expect(body.data.direction).to.eql('BELOW'));",
+                  "pm.test('targetPrice matches', () => pm.expect(body.data.targetPrice).to.eql(50000.00));",
+                  "pm.test('isActive is true', () => pm.expect(body.data.isActive).to.be.true);",
+                  "pm.environment.set('alertId_tcs', body.data.alertId);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"b595ea4c-4baa-48a0-84ec-b4dfc272c47c\",\n  \"symbol\": \"TCS\",\n  \"targetPrice\": 50000.00,\n  \"direction\": \"BELOW\"\n}"
+            },
+            "url": {"raw": "{{orderEngineUrl}}/api/v1/alerts", "host": ["{{orderEngineUrl}}"], "path": ["api", "v1", "alerts"]}
+          }
+        },
+        {
+          "name": "3. Create Alert - lowercase symbol (case-insensitive)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('symbol normalised to uppercase INFY', () => pm.expect(body.data.symbol).to.eql('INFY'));",
+                  "pm.test('isActive is true', () => pm.expect(body.data.isActive).to.be.true);",
+                  "pm.environment.set('alertId_infy', body.data.alertId);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"672cc9ab-3c63-4c28-935e-271b58899a1c\",\n  \"symbol\": \"infy\",\n  \"targetPrice\": 50000.00,\n  \"direction\": \"ABOVE\"\n}"
+            },
+            "url": {"raw": "{{orderEngineUrl}}/api/v1/alerts", "host": ["{{orderEngineUrl}}"], "path": ["api", "v1", "alerts"]}
+          }
+        },
+        {
+          "name": "4. Get Active Alerts - User 1 (Aarav)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('success is true', () => pm.expect(body.success).to.be.true);",
+                  "pm.test('data is an array', () => pm.expect(body.data).to.be.an('array'));",
+                  "pm.test('message contains alert count', () => pm.expect(body.message).to.match(/Found \\d+ active alert/));",
+                  "pm.test('all returned alerts are active', () => {",
+                  "  body.data.forEach(a => pm.expect(a.isActive).to.be.true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {"raw": "{{orderEngineUrl}}/api/v1/alerts/b595ea4c-4baa-48a0-84ec-b4dfc272c47c", "host": ["{{orderEngineUrl}}"], "path": ["api", "v1", "alerts", "b595ea4c-4baa-48a0-84ec-b4dfc272c47c"]}
+          }
+        },
+        {
+          "name": "5. Cancel Alert - TCS BELOW",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('success is true', () => pm.expect(body.success).to.be.true);",
+                  "pm.test('message contains cancelled', () => pm.expect(body.message).to.include('cancelled'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": {"raw": "{{orderEngineUrl}}/api/v1/alerts/{{alertId_tcs}}", "host": ["{{orderEngineUrl}}"], "path": ["api", "v1", "alerts", "{{alertId_tcs}}"]}
+          }
+        },
+        {
+          "name": "6. Cancel Already-Inactive Alert - 400 Error",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400 Bad Request', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('success is false', () => pm.expect(body.success).to.be.false);",
+                  "pm.test('message mentions already inactive', () => pm.expect(body.message).to.include('already inactive'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": {"raw": "{{orderEngineUrl}}/api/v1/alerts/{{alertId_tcs}}", "host": ["{{orderEngineUrl}}"], "path": ["api", "v1", "alerts", "{{alertId_tcs}}"]}
+          }
+        },
+        {
+          "name": "7. Get Alerts - TCS alert no longer in list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('success is true', () => pm.expect(body.success).to.be.true);",
+                  "const tcsAlertId = pm.environment.get('alertId_tcs');",
+                  "pm.test('cancelled TCS alert not in list', () => {",
+                  "  const ids = body.data.map(a => a.alertId);",
+                  "  pm.expect(ids).to.not.include(tcsAlertId);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {"raw": "{{orderEngineUrl}}/api/v1/alerts/b595ea4c-4baa-48a0-84ec-b4dfc272c47c", "host": ["{{orderEngineUrl}}"], "path": ["api", "v1", "alerts", "b595ea4c-4baa-48a0-84ec-b4dfc272c47c"]}
+          }
+        },
+        {
+          "name": "8. Cancel Non-Existent Alert - 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404 Not Found', () => pm.response.to.have.status(404));",
+                  "const body = pm.response.json();",
+                  "pm.test('success is false', () => pm.expect(body.success).to.be.false);",
+                  "pm.test('message mentions not found', () => pm.expect(body.message).to.include('not found'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": {"raw": "{{orderEngineUrl}}/api/v1/alerts/00000000-0000-0000-0000-000000000000", "host": ["{{orderEngineUrl}}"], "path": ["api", "v1", "alerts", "00000000-0000-0000-0000-000000000000"]}
+          }
+        },
+        {
+          "name": "9. Create Alert - Invalid direction (validation error)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400 Bad Request', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('success is false', () => pm.expect(body.success).to.be.false);",
+                  "pm.test('message mentions direction', () => pm.expect(body.message).to.include('direction'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"b595ea4c-4baa-48a0-84ec-b4dfc272c47c\",\n  \"symbol\": \"TCS\",\n  \"targetPrice\": 3000.00,\n  \"direction\": \"SIDEWAYS\"\n}"
+            },
+            "url": {"raw": "{{orderEngineUrl}}/api/v1/alerts", "host": ["{{orderEngineUrl}}"], "path": ["api", "v1", "alerts"]}
+          }
+        },
+        {
+          "name": "10. Create Alert - Unsupported symbol (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400 Bad Request', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('success is false', () => pm.expect(body.success).to.be.false);",
+                  "pm.test('message mentions not supported', () => pm.expect(body.message.toLowerCase()).to.include('not supported'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"b595ea4c-4baa-48a0-84ec-b4dfc272c47c\",\n  \"symbol\": \"AAPL\",\n  \"targetPrice\": 200.00,\n  \"direction\": \"ABOVE\"\n}"
+            },
+            "url": {"raw": "{{orderEngineUrl}}/api/v1/alerts", "host": ["{{orderEngineUrl}}"], "path": ["api", "v1", "alerts"]}
+          }
+        },
+        {
+          "name": "11. Get Alerts - Empty user (no alerts)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('success is true', () => pm.expect(body.success).to.be.true);",
+                  "pm.test('data is an empty array', () => pm.expect(body.data).to.be.an('array').that.has.lengthOf(0));",
+                  "pm.test('message says 0 alerts', () => pm.expect(body.message).to.include('0 active'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {"raw": "{{orderEngineUrl}}/api/v1/alerts/ef36400d-b048-46f6-9590-89a988259c2d", "host": ["{{orderEngineUrl}}"], "path": ["api", "v1", "alerts", "ef36400d-b048-46f6-9590-89a988259c2d"]}
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {"key": "orderEngineUrl", "value": "http://localhost:8083"}
+  ]
+}

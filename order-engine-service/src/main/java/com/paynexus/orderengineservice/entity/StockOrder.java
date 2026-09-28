@@ -12,11 +12,7 @@ import java.util.UUID;
 
 /**
  * Represents a user BUY or SELL stock order.
- *
- * Status lifecycle:
- *   PENDING -> FUNDS_RESERVED -> EXECUTED
- *                            -> FAILED -> COMPENSATED
- *
+ * Status lifecycle: PENDING -> FUNDS_RESERVED -> EXECUTED / FAILED -> COMPENSATED
  * Maps to: stock_orders table (V1__create_stock_orders_table.sql)
  */
 @Entity
@@ -104,7 +100,6 @@ public class StockOrder {
 
     @Override
     public String toString() {
-        return "StockOrder{id=" + id + ", userId=" + userId + ", symbol='" + symbol +
-               "', orderType=" + orderType + ", quantity=" + quantity + ", status=" + status + '}';
+        return "StockOrder{id=" + id + ", symbol='" + symbol + "', status=" + status + '}';
     }
 }
