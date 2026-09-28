@@ -1,0 +1,316 @@
+{
+  "info": {
+    "name": "PayNexus - Order Engine Service",
+    "description": "Market Data API tests for order-engine-service (Port 8083).\n\nEndpoints covered:\n1. GET /api/v1/market/prices           — All tracked stock prices\n2. GET /api/v1/market/prices/{symbol}  — Single stock price + 20-tick history\n3. GET /api/v1/market/feed-status      — Market feed mode + metadata\n\nRun these after starting order-engine-service on port 8083.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Market Data",
+      "item": [
+        {
+          "name": "1. Get All Market Prices",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{orderEngineUrl}}/api/v1/market/prices",
+              "host": ["{{orderEngineUrl}}"],
+              "path": ["api", "v1", "market", "prices"]
+            },
+            "description": "Returns latest prices for all 10 tracked NSE symbols.\nPrices are refreshed every ~2 seconds by the simulation engine."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response has success flag', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.success).to.be.true;",
+                  "});",
+                  "pm.test('Data contains prices map', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data).to.have.property('prices');",
+                  "    pm.expect(res.data.prices).to.be.an('object');",
+                  "});",
+                  "pm.test('Prices map has 10 symbols', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.totalSymbols).to.equal(10);",
+                  "    pm.expect(Object.keys(res.data.prices).length).to.equal(10);",
+                  "});",
+                  "pm.test('All prices are positive numbers', function () {",
+                  "    var prices = pm.response.json().data.prices;",
+                  "    Object.values(prices).forEach(function(p) {",
+                  "        pm.expect(p).to.be.a('number').and.above(0);",
+                  "    });",
+                  "});",
+                  "pm.test('RELIANCE price is present', function () {",
+                  "    var prices = pm.response.json().data.prices;",
+                  "    pm.expect(prices).to.have.property('RELIANCE');",
+                  "});",
+                  "pm.test('Response time is under 500ms', function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Get Single Stock Price - RELIANCE",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{orderEngineUrl}}/api/v1/market/prices/RELIANCE",
+              "host": ["{{orderEngineUrl}}"],
+              "path": ["api", "v1", "market", "prices", "RELIANCE"]
+            },
+            "description": "Returns current price + last 20 price ticks for RELIANCE."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Symbol is RELIANCE', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.symbol).to.equal('RELIANCE');",
+                  "});",
+                  "pm.test('currentPrice is a positive number', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.currentPrice).to.be.a('number').and.above(0);",
+                  "    // save for later comparison",
+                  "    pm.environment.set('reliancePrice', res.data.currentPrice);",
+                  "});",
+                  "pm.test('priceHistory is an array', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.priceHistory).to.be.an('array');",
+                  "});",
+                  "pm.test('priceHistory has at most 20 entries', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.priceHistory.length).to.be.at.most(20);",
+                  "});",
+                  "pm.test('priceHistory entries are string numbers', function () {",
+                  "    var history = pm.response.json().data.priceHistory;",
+                  "    if (history.length > 0) {",
+                  "        history.forEach(function(tick) {",
+                  "            pm.expect(parseFloat(tick)).to.be.above(0);",
+                  "        });",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Get Single Stock Price - TCS (lowercase test)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{orderEngineUrl}}/api/v1/market/prices/tcs",
+              "host": ["{{orderEngineUrl}}"],
+              "path": ["api", "v1", "market", "prices", "tcs"]
+            },
+            "description": "Tests case-insensitive symbol lookup — 'tcs' should resolve to 'TCS'."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Symbol normalized to uppercase TCS', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.symbol).to.equal('TCS');",
+                  "});",
+                  "pm.test('currentPrice is a positive number', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.currentPrice).to.be.a('number').and.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Get Single Stock Price - NIFTY50",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{orderEngineUrl}}/api/v1/market/prices/NIFTY50",
+              "host": ["{{orderEngineUrl}}"],
+              "path": ["api", "v1", "market", "prices", "NIFTY50"]
+            },
+            "description": "Tests index symbol lookup."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Symbol is NIFTY50', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.symbol).to.equal('NIFTY50');",
+                  "});",
+                  "pm.test('NIFTY50 price is in realistic range (above 1000)', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.currentPrice).to.be.above(1000);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Get Unknown Symbol - Should Return 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{orderEngineUrl}}/api/v1/market/prices/UNKNOWN_XYZ",
+              "host": ["{{orderEngineUrl}}"],
+              "path": ["api", "v1", "market", "prices", "UNKNOWN_XYZ"]
+            },
+            "description": "Tests 404 handling for an unsupported symbol. Error response lists all supported symbols."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404 Not Found', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "pm.test('Response has success=false', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.success).to.be.false;",
+                  "});",
+                  "pm.test('Error message mentions the symbol', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.message).to.include('UNKNOWN_XYZ');",
+                  "});",
+                  "pm.test('Error message lists supported symbols', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.message).to.include('Supported symbols');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6. Get Market Feed Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{orderEngineUrl}}/api/v1/market/feed-status",
+              "host": ["{{orderEngineUrl}}"],
+              "path": ["api", "v1", "market", "feed-status"]
+            },
+            "description": "Returns feed mode (SIMULATION or LIVE) + metadata. Use in Admin Panel."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response has success flag', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.success).to.be.true;",
+                  "});",
+                  "pm.test('mode is SIMULATION or LIVE', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(['SIMULATION', 'LIVE']).to.include(res.data.mode);",
+                  "});",
+                  "pm.test('mode is SIMULATION (no Upstox token yet)', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.mode).to.equal('SIMULATION');",
+                  "});",
+                  "pm.test('lastUpdated is a non-null string', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.lastUpdated).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('trackedSymbols is 10', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.trackedSymbols).to.equal(10);",
+                  "});",
+                  "pm.test('description field is present', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.description).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7. Verify Prices Change Over Time (2-second re-poll)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{orderEngineUrl}}/api/v1/market/prices/RELIANCE",
+              "host": ["{{orderEngineUrl}}"],
+              "path": ["api", "v1", "market", "prices", "RELIANCE"]
+            },
+            "description": "Run this 2+ seconds after request #2. The price should be different, proving the simulator is live."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('currentPrice is a positive number', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.currentPrice).to.be.a('number').and.above(0);",
+                  "});",
+                  "pm.test('priceHistory has grown (at least 2 entries)', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.priceHistory.length).to.be.at.least(2);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -43,7 +43,15 @@ eureka:
   instance:
     prefer-ip-address: true
 
+feign:
+  circuitbreaker:
+    enabled: true
+
+market:
+  feed:
+    provider: simulation   # switch to 'upstox' when live token is in Redis
+
 logging:
   level:
-    com.paynexus.walletservice: DEBUG
+    com.paynexus.orderengineservice: DEBUG
     org.springframework.web: INFO
