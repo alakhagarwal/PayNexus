@@ -276,10 +276,13 @@ Handled by `GlobalExceptionHandler` (`@RestControllerAdvice`):
 |---|---|---|
 | `ResourceNotFoundException` | `404 Not Found` | Unknown symbol / alert ID not found |
 | `IllegalArgumentException` | `400 Bad Request` | Unsupported symbol, already-inactive cancel |
-| `MethodArgumentNotValidException` | `400 Bad Request` | `@Valid` failures (missing fields, bad direction) |
+| `MethodArgumentNotValidException` | `400 Bad Request` | `@Valid` field failures (missing fields, blank strings) |
+| `HttpMessageNotReadableException` | `400 Bad Request` | Missing request body or malformed JSON |
+| `MethodArgumentTypeMismatchException` | `400 Bad Request` | Invalid path variable / query param format (e.g. invalid UUID) |
+| `HttpRequestMethodNotSupportedException` | `405 Method Not Allowed` | Calling endpoint with unsupported HTTP verb |
 | `Exception` (catch-all) | `500 Internal Server Error` | Unexpected failures |
 
-**All errors use the same format:**
+**All errors use the same uniform JSON format:**
 ```json
 {
   "success": false,
@@ -357,15 +360,23 @@ CREATE TABLE price_alerts (
 
 ## Postman Collection & Testing
 
-### Collection in PayNexus Workspace
+### Collections in PayNexus Workspace
 
-**Collection**: `PayNexus - Order Engine Service` (ID: `16f81ca6-8521-4bab-88e2-7450382428ec`)  
-**Environment**: `PayNexus - Local Dev` — select before running  
-**Key env variables**: `orderEngineUrl = http://localhost:8083`, `aaravId`, `priyaId`
+Workspace ID: `0fc284b6-fcca-4a8c-8456-ff21631d0f7b` (**PayNexus**)
 
-Folders inside the collection:
-- `Market Data` — Phase 1 (7 requests)
-- `Price Alerts (Phase 2)` — Phase 2 (12 requests)
+1. **`PayNexus - Order Engine Phase 2 (Price Alerts)`** (UID: `50886880-ef3ce7c5-8c17-4efd-987f-7261d4d54e76`)  
+   Dedicated Phase 2 test suite containing 12 requests with 37 assertions testing alert creation, active alert query, automatic threshold triggering, soft-deletion, and validation boundaries.
+
+2. **`PayNexus - Order Engine Service`** (UID: `50886880-16f81ca6-8521-4bab-88e2-7450382428ec`)  
+   Full Order Engine collection containing both Market Data (Phase 1) and Price Alerts Engine (Phase 2).
+
+**Key collection variables:**  
+- `orderEngineUrl` / `baseUrl`: `http://localhost:8083`  
+- `aaravId`: `b595ea4c-4baa-48a0-84ec-b4dfc272c47c`  
+- `priyaId`: `672cc9ab-3c63-4c28-935e-271b58899a1c`  
+- `alertId`, `cancelId`, `triggerAlertId`: dynamic runtime variables set by test scripts  
+
+---
 
 ### Newman Results — Phase 1 (Market Data)
 
@@ -416,17 +427,36 @@ PayNexus - Order Engine Phase 2 (Price Alerts)
 │ test-scripts            │       12 │      0 │
 │ assertions              │       37 │      0 │
 └─────────────────────────┴──────────┴────────┘
-Total run duration: 5.1s | Avg response time: 11ms
+Total run duration: 5.1s | Avg response time: 15ms | Failed: 0
+```
+
+### Newman Results — Full Combined Suite (Phase 1 + Phase 2)
+
+```
+PayNexus - Order Engine Service (Full Suite)
+
+┌─────────────────────────┬──────────┬────────┐
+│                         │ executed │ failed │
+├─────────────────────────┼──────────┼────────┤
+│ iterations              │        1 │      0 │
+│ requests                │       19 │      0 │
+│ test-scripts            │       19 │      0 │
+│ assertions              │       70 │      0 │
+└─────────────────────────┴──────────┴────────┘
+Total run duration: 5.9s | Avg response time: 17ms | Failed: 0
 ```
 
 ### Running Tests Locally
 
 ```bash
-# Phase 1 - Market Data
+# Phase 1 - Market Data (7 requests, 33 assertions)
 npx newman run order-engine-service/postman/PayNexus_OrderEngine_MarketData.postman_collection.json --reporters cli
 
-# Phase 2 - Price Alerts
+# Phase 2 - Price Alerts (12 requests, 37 assertions)
 npx newman run order-engine-service/postman/PayNexus_Alerts_Phase2.postman_collection.json --reporters cli
+
+# Full Suite - Market Data + Price Alerts (19 requests, 70 assertions)
+npx newman run order-engine-service/postman/PayNexus_OrderEngine_Full.postman_collection.json --reporters cli
 ```
 
 ---

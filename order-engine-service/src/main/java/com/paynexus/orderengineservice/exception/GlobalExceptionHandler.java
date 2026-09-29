@@ -8,6 +8,10 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+
 import java.util.stream.Collectors;
 
 /**
@@ -41,6 +45,34 @@ public class GlobalExceptionHandler {
         log.warn("Validation failed: {}", msg);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.error(msg));
+    }
+
+    /** Handles missing or malformed request body (e.g. empty body or invalid JSON). */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleNotReadable(HttpMessageNotReadableException ex) {
+        log.warn("Malformed or missing request body: {}", ex.getMessage());
+        String msg = "Required request body is missing or malformed JSON";
+        if (ex.getMessage() != null && ex.getMessage().contains("Required request body is missing")) {
+            msg = "Required request body is missing";
+        }
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(msg));
+    }
+
+    /** Handles type mismatch on path variables / query params (e.g. invalid UUID format). */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResponse<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        String msg = String.format("Invalid format for parameter '%s'", ex.getName());
+        log.warn("Parameter type mismatch: {}", msg);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(msg));
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMethodNotAllowed(HttpRequestMethodNotSupportedException ex) {
+        log.warn("Method not allowed: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .body(ApiResponse.error("HTTP method " + ex.getMethod() + " is not supported for this endpoint"));
     }
 
     @ExceptionHandler(Exception.class)

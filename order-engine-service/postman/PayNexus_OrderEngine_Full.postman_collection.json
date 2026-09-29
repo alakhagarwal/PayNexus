@@ -1,0 +1,697 @@
+{
+  "info": {
+    "name": "PayNexus - Order Engine Service",
+    "description": "Comprehensive API test suite for Order Engine Service (Port 8083).\n\nFolders:\n1. Market Data (Phase 1) - Simulated NSE stock prices and ticker feed\n2. Price Alerts (Phase 2) - Threshold alerts engine, active alert queries, auto-triggers, and cancellations",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "orderEngineUrl",
+      "value": "http://localhost:8083"
+    },
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8083"
+    },
+    {
+      "key": "aaravId",
+      "value": "b595ea4c-4baa-48a0-84ec-b4dfc272c47c"
+    },
+    {
+      "key": "priyaId",
+      "value": "672cc9ab-3c63-4c28-935e-271b58899a1c"
+    },
+    {
+      "key": "alertId",
+      "value": ""
+    },
+    {
+      "key": "cancelId",
+      "value": ""
+    },
+    {
+      "key": "triggerAlertId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Market Data (Phase 1)",
+      "description": "Endpoints for simulated stock ticker feed and price discovery",
+      "item": [
+        {
+          "name": "1. Get All Market Prices",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{orderEngineUrl}}/api/v1/market/prices",
+              "host": [
+                "{{orderEngineUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "market",
+                "prices"
+              ]
+            },
+            "description": "Returns latest prices for all 10 tracked NSE symbols.\nPrices are refreshed every ~2 seconds by the simulation engine."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response has success flag', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.success).to.be.true;",
+                  "});",
+                  "pm.test('Data contains prices map', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data).to.have.property('prices');",
+                  "    pm.expect(res.data.prices).to.be.an('object');",
+                  "});",
+                  "pm.test('Prices map has 10 symbols', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.totalSymbols).to.equal(10);",
+                  "    pm.expect(Object.keys(res.data.prices).length).to.equal(10);",
+                  "});",
+                  "pm.test('All prices are positive numbers', function () {",
+                  "    var prices = pm.response.json().data.prices;",
+                  "    Object.values(prices).forEach(function(p) {",
+                  "        pm.expect(p).to.be.a('number').and.above(0);",
+                  "    });",
+                  "});",
+                  "pm.test('RELIANCE price is present', function () {",
+                  "    var prices = pm.response.json().data.prices;",
+                  "    pm.expect(prices).to.have.property('RELIANCE');",
+                  "});",
+                  "pm.test('Response time is under 500ms', function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Get Single Stock Price - RELIANCE",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{orderEngineUrl}}/api/v1/market/prices/RELIANCE",
+              "host": [
+                "{{orderEngineUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "market",
+                "prices",
+                "RELIANCE"
+              ]
+            },
+            "description": "Returns current price + last 20 price ticks for RELIANCE."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Symbol is RELIANCE', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.symbol).to.equal('RELIANCE');",
+                  "});",
+                  "pm.test('currentPrice is a positive number', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.currentPrice).to.be.a('number').and.above(0);",
+                  "    // save for later comparison",
+                  "    pm.environment.set('reliancePrice', res.data.currentPrice);",
+                  "});",
+                  "pm.test('priceHistory is an array', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.priceHistory).to.be.an('array');",
+                  "});",
+                  "pm.test('priceHistory has at most 20 entries', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.priceHistory.length).to.be.at.most(20);",
+                  "});",
+                  "pm.test('priceHistory entries are string numbers', function () {",
+                  "    var history = pm.response.json().data.priceHistory;",
+                  "    if (history.length > 0) {",
+                  "        history.forEach(function(tick) {",
+                  "            pm.expect(parseFloat(tick)).to.be.above(0);",
+                  "        });",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Get Single Stock Price - TCS (lowercase test)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{orderEngineUrl}}/api/v1/market/prices/tcs",
+              "host": [
+                "{{orderEngineUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "market",
+                "prices",
+                "tcs"
+              ]
+            },
+            "description": "Tests case-insensitive symbol lookup \u00e2\u20ac\u201d 'tcs' should resolve to 'TCS'."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Symbol normalized to uppercase TCS', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.symbol).to.equal('TCS');",
+                  "});",
+                  "pm.test('currentPrice is a positive number', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.currentPrice).to.be.a('number').and.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Get Single Stock Price - NIFTY50",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{orderEngineUrl}}/api/v1/market/prices/NIFTY50",
+              "host": [
+                "{{orderEngineUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "market",
+                "prices",
+                "NIFTY50"
+              ]
+            },
+            "description": "Tests index symbol lookup."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Symbol is NIFTY50', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.symbol).to.equal('NIFTY50');",
+                  "});",
+                  "pm.test('NIFTY50 price is in realistic range (above 1000)', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.currentPrice).to.be.above(1000);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Get Unknown Symbol - Should Return 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{orderEngineUrl}}/api/v1/market/prices/UNKNOWN_XYZ",
+              "host": [
+                "{{orderEngineUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "market",
+                "prices",
+                "UNKNOWN_XYZ"
+              ]
+            },
+            "description": "Tests 404 handling for an unsupported symbol. Error response lists all supported symbols."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404 Not Found', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "pm.test('Response has success=false', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.success).to.be.false;",
+                  "});",
+                  "pm.test('Error message mentions the symbol', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.message).to.include('UNKNOWN_XYZ');",
+                  "});",
+                  "pm.test('Error message lists supported symbols', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.message).to.include('Supported symbols');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6. Get Market Feed Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{orderEngineUrl}}/api/v1/market/feed-status",
+              "host": [
+                "{{orderEngineUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "market",
+                "feed-status"
+              ]
+            },
+            "description": "Returns feed mode (SIMULATION or LIVE) + metadata. Use in Admin Panel."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response has success flag', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.success).to.be.true;",
+                  "});",
+                  "pm.test('mode is SIMULATION or LIVE', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(['SIMULATION', 'LIVE']).to.include(res.data.mode);",
+                  "});",
+                  "pm.test('mode is SIMULATION (no Upstox token yet)', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.mode).to.equal('SIMULATION');",
+                  "});",
+                  "pm.test('lastUpdated is a non-null string', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.lastUpdated).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('trackedSymbols is 10', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.trackedSymbols).to.equal(10);",
+                  "});",
+                  "pm.test('description field is present', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.description).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7. Verify Prices Change Over Time (2-second re-poll)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{orderEngineUrl}}/api/v1/market/prices/RELIANCE",
+              "host": [
+                "{{orderEngineUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "market",
+                "prices",
+                "RELIANCE"
+              ]
+            },
+            "description": "Run this 2+ seconds after request #2. The price should be different, proving the simulator is live."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('currentPrice is a positive number', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.currentPrice).to.be.a('number').and.above(0);",
+                  "});",
+                  "pm.test('priceHistory has grown (at least 2 entries)', function () {",
+                  "    var res = pm.response.json();",
+                  "    pm.expect(res.data.priceHistory.length).to.be.at.least(2);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Price Alerts Engine (Phase 2)",
+      "description": "Endpoints for creating, querying, and cancelling price alerts with automated price threshold triggering",
+      "item": [
+        {
+          "name": "1 - Create Alert (ABOVE - never triggers)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('success is true', () => pm.expect(pm.response.json().success).to.be.true);",
+                  "pm.test('data.alertId exists', () => pm.expect(pm.response.json().data.alertId).to.be.a('string'));",
+                  "pm.test('direction is ABOVE', () => pm.expect(pm.response.json().data.direction).to.equal('ABOVE'));",
+                  "pm.test('isActive is true', () => pm.expect(pm.response.json().data.isActive).to.be.true);",
+                  "pm.collectionVariables.set('alertId', pm.response.json().data.alertId);",
+                  "pm.collectionVariables.set('cancelId', pm.response.json().data.alertId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/alerts",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{aaravId}}\",\n  \"symbol\": \"TCS\",\n  \"targetPrice\": 999999.00,\n  \"direction\": \"ABOVE\"\n}"
+            }
+          }
+        },
+        {
+          "name": "2 - Create Alert (BELOW - auto-triggers immediately)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('success is true', () => pm.expect(pm.response.json().success).to.be.true);",
+                  "pm.test('symbol is RELIANCE', () => pm.expect(pm.response.json().data.symbol).to.equal('RELIANCE'));",
+                  "pm.test('direction is BELOW', () => pm.expect(pm.response.json().data.direction).to.equal('BELOW'));",
+                  "pm.collectionVariables.set('triggerAlertId', pm.response.json().data.alertId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/alerts",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{priyaId}}\",\n  \"symbol\": \"RELIANCE\",\n  \"targetPrice\": 999999.00,\n  \"direction\": \"BELOW\"\n}"
+            }
+          }
+        },
+        {
+          "name": "3 - Create Alert (Validation: invalid direction)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('success is false', () => pm.expect(pm.response.json().success).to.be.false);",
+                  "pm.test('message mentions direction', () => pm.expect(pm.response.json().message).to.include('direction'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/alerts",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{aaravId}}\",\n  \"symbol\": \"RELIANCE\",\n  \"targetPrice\": 2500.00,\n  \"direction\": \"SIDEWAYS\"\n}"
+            }
+          }
+        },
+        {
+          "name": "4 - Create Alert (Validation: unsupported symbol)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('success is false', () => pm.expect(pm.response.json().success).to.be.false);",
+                  "pm.test('message mentions symbol', () => pm.expect(pm.response.json().message).to.include('not supported'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/alerts",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{aaravId}}\",\n  \"symbol\": \"DOGECOIN\",\n  \"targetPrice\": 1.00,\n  \"direction\": \"ABOVE\"\n}"
+            }
+          }
+        },
+        {
+          "name": "5 - Get Active Alerts (Aarav - should have TCS alert)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('success is true', () => pm.expect(pm.response.json().success).to.be.true);",
+                  "pm.test('data is an array', () => pm.expect(pm.response.json().data).to.be.an('array'));",
+                  "pm.test('at least 1 alert', () => pm.expect(pm.response.json().data.length).to.be.at.least(1));",
+                  "pm.test('all alerts are active', () => pm.response.json().data.forEach(a => pm.expect(a.isActive).to.be.true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/alerts/{{aaravId}}"
+          }
+        },
+        {
+          "name": "6 - Get Active Alerts (empty user - returns empty array)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('data is empty array', () => pm.expect(pm.response.json().data).to.be.an('array').that.is.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/alerts/00000000-0000-0000-0000-000000000000"
+          }
+        },
+        {
+          "name": "7 - Wait for auto-trigger (sleep 4s via pre-request)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const waitMs = 4000;",
+                  "const start = Date.now();",
+                  "while (Date.now() - start < waitMs) {}",
+                  "console.log('Waited 4s for price tick to trigger alert');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Trigger-wait ping is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Feed is running (mode=SIMULATION)', () => pm.expect(pm.response.json().data.mode).to.equal('SIMULATION'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/market/feed-status"
+          }
+        },
+        {
+          "name": "8 - Verify auto-triggered BELOW alert gone from Priya active list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const alerts = pm.response.json().data;",
+                  "pm.test('RELIANCE BELOW 999999 not in active list (auto-triggered)', () => {",
+                  "  const found = alerts.find(a => a.symbol === 'RELIANCE' && a.targetPrice === 999999 && a.direction === 'BELOW');",
+                  "  pm.expect(found).to.be.undefined;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/alerts/{{priyaId}}"
+          }
+        },
+        {
+          "name": "9 - Cancel Alert (soft delete)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('success is true', () => pm.expect(pm.response.json().success).to.be.true);",
+                  "pm.test('message is cancelled', () => pm.expect(pm.response.json().message).to.include('cancelled'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/alerts/{{cancelId}}"
+          }
+        },
+        {
+          "name": "10 - Cancel Already Inactive Alert (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('success is false', () => pm.expect(pm.response.json().success).to.be.false);",
+                  "pm.test('message mentions already inactive', () => pm.expect(pm.response.json().message).to.include('already inactive'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/alerts/{{cancelId}}"
+          }
+        },
+        {
+          "name": "11 - Cancel Non-existent Alert (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('success is false', () => pm.expect(pm.response.json().success).to.be.false);",
+                  "pm.test('message mentions Alert not found', () => pm.expect(pm.response.json().message).to.include('Alert not found'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/alerts/00000000-0000-0000-0000-000000000000"
+          }
+        },
+        {
+          "name": "12 - Verify Aarav alerts empty after cancel",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('No active TCS alert for Aarav', () => {",
+                  "  const tcsAlert = pm.response.json().data.find(a => a.symbol === 'TCS');",
+                  "  pm.expect(tcsAlert).to.be.undefined;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/alerts/{{aaravId}}"
+          }
+        }
+      ]
+    }
+  ]
+}
