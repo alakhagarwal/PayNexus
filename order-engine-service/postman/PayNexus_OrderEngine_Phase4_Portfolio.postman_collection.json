@@ -1,0 +1,210 @@
+{
+  "info": {
+    "name": "PayNexus - Order Engine Phase 4 (Portfolio & P&L)",
+    "description": "Phase 4 Portfolio and Live Unrealized P&L Endpoints for PayNexus Order Engine Service.\n\nEndpoints Tested:\n1. GET /api/v1/portfolio/{userId} â€” Full user portfolio enriched with live Redis prices and aggregate P&L\n2. GET /api/v1/portfolio/{userId}/holdings â€” List of individual stock positions with per-holding P&L\n3. Routing validation through API Gateway (:8080)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8083",
+      "description": "Direct order-engine-service base URL"
+    },
+    {
+      "key": "gatewayUrl",
+      "value": "http://localhost:8080",
+      "description": "API Gateway base URL"
+    },
+    {
+      "key": "userId",
+      "value": "a0141d67-c2fb-446b-92f6-3d751461e25a",
+      "description": "User with existing stock holdings in PostgreSQL"
+    },
+    {
+      "key": "emptyUserId",
+      "value": "00000000-0000-0000-0000-000000000001",
+      "description": "UUID with 0 stock positions"
+    }
+  ],
+  "item": [
+    {
+      "name": "4.1 â€” Empty User Portfolio & Holdings",
+      "item": [
+        {
+          "name": "GET Portfolio for Empty User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Response indicates success', () => pm.expect(body.success).to.be.true);",
+                  "pm.test('Message indicates no holdings found', () => pm.expect(body.message).to.include('No holdings found'));",
+                  "pm.test('Holdings array is empty', () => pm.expect(body.data.holdings).to.be.an('array').with.length(0));",
+                  "pm.test('Total stocks is 0', () => pm.expect(body.data.totalStocks).to.equal(0));",
+                  "pm.test('Total invested is 0.00', () => pm.expect(Number(body.data.totalInvested)).to.equal(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/portfolio/{{emptyUserId}}"
+          }
+        },
+        {
+          "name": "GET Holdings for Empty User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Response indicates success', () => pm.expect(body.success).to.be.true);",
+                  "pm.test('Data is an empty array', () => pm.expect(body.data).to.be.an('array').with.length(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/portfolio/{{emptyUserId}}/holdings"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4.2 â€” User Portfolio with Live P&L Enrichment",
+      "item": [
+        {
+          "name": "GET Full Portfolio with Aggregated P&L",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Response indicates success', () => pm.expect(body.success).to.be.true);",
+                  "pm.test('User ID matches request', () => pm.expect(body.data.userId).to.equal(pm.variables.get('userId')));",
+                  "pm.test('User has at least 1 stock holding', () => pm.expect(body.data.totalStocks).to.be.above(0));",
+                  "pm.test('Total invested is a positive number', () => pm.expect(Number(body.data.totalInvested)).to.be.above(0));",
+                  "pm.test('Total current value is computed', () => pm.expect(body.data.totalCurrentValue).to.not.be.undefined);",
+                  "pm.test('Total unrealized P&L is calculated', () => pm.expect(body.data.totalUnrealizedPnl).to.not.be.undefined);",
+                  "pm.test('Total P&L percent is calculated', () => pm.expect(body.data.totalPnlPercent).to.not.be.undefined);",
+                  "pm.test('Overall P&L direction is valid', () => pm.expect(['PROFIT', 'LOSS', 'NEUTRAL']).to.include(body.data.overallPnlDirection));",
+                  "pm.test('Holdings array contains enriched stock items', () => {",
+                  "  pm.expect(body.data.holdings).to.be.an('array').and.not.empty;",
+                  "  const h = body.data.holdings[0];",
+                  "  pm.expect(h.holdingId).to.be.a('string');",
+                  "  pm.expect(h.symbol).to.be.a('string');",
+                  "  pm.expect(h.quantity).to.be.above(0);",
+                  "  pm.expect(h.currentPrice).to.be.above(0);",
+                  "  pm.expect(h.currentValue).to.be.above(0);",
+                  "  pm.expect(['PROFIT', 'LOSS', 'NEUTRAL']).to.include(h.pnlDirection);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/portfolio/{{userId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4.3 â€” User Holdings List (Per-Stock Position)",
+      "item": [
+        {
+          "name": "GET Enriched Holdings List",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Response indicates success', () => pm.expect(body.success).to.be.true);",
+                  "pm.test('Data is an array of holdings', () => pm.expect(body.data).to.be.an('array').and.not.empty);",
+                  "pm.test('Holding items contain live pricing and P&L metrics', () => {",
+                  "  body.data.forEach(h => {",
+                  "    pm.expect(h.holdingId).to.be.a('string');",
+                  "    pm.expect(h.symbol).to.be.a('string');",
+                  "    pm.expect(h.quantity).to.be.above(0);",
+                  "    pm.expect(Number(h.avgBuyPrice)).to.be.above(0);",
+                  "    pm.expect(Number(h.totalInvested)).to.be.above(0);",
+                  "    pm.expect(Number(h.currentPrice)).to.be.above(0);",
+                  "    pm.expect(Number(h.currentValue)).to.be.above(0);",
+                  "    pm.expect(h.unrealizedPnl).to.not.be.undefined;",
+                  "    pm.expect(h.pnlPercent).to.not.be.undefined;",
+                  "    pm.expect(['PROFIT', 'LOSS', 'NEUTRAL']).to.include(h.pnlDirection);",
+                  "    pm.expect(h.updatedAt).to.be.a('string');",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/portfolio/{{userId}}/holdings"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4.4 â€” API Gateway Reverse Proxy Routing (:8080)",
+      "item": [
+        {
+          "name": "GET Portfolio via Gateway",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Gateway forwards request with 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Gateway response contains portfolio data', () => {",
+                  "  pm.expect(body.success).to.be.true;",
+                  "  pm.expect(body.data.userId).to.equal(pm.variables.get('userId'));",
+                  "  pm.expect(body.data.holdings).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayUrl}}/api/v1/portfolio/{{userId}}"
+          }
+        },
+        {
+          "name": "GET Holdings via Gateway",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Gateway forwards request with 200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Gateway response contains holdings array', () => {",
+                  "  pm.expect(body.success).to.be.true;",
+                  "  pm.expect(body.data).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayUrl}}/api/v1/portfolio/{{userId}}/holdings"
+          }
+        }
+      ]
+    }
+  ]
+}

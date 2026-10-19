@@ -39,11 +39,29 @@ spring:
           predicates:
             - Path=/admin/**
 
-        # 5. Internal Inter-Service Wallet Endpoints (Holds, Settlements)
-        # - id: wallet-service-internal
-        #   uri: lb://wallet-service
-        #   predicates:
-        #     - Path=/internal/wallet/**
+        # 5. Market Data — Simulated NSE price feed (order-engine-service)
+        - id: order-engine-market
+          uri: lb://order-engine-service
+          predicates:
+            - Path=/api/v1/market/**
+
+        # 6. Price Alerts (order-engine-service)
+        - id: order-engine-alerts
+          uri: lb://order-engine-service
+          predicates:
+            - Path=/api/v1/alerts/**
+
+        # 7. Stock Orders — BUY / SELL / History (order-engine-service)
+        - id: order-engine-orders
+          uri: lb://order-engine-service
+          predicates:
+            - Path=/api/v1/orders/**
+
+        # 8. Portfolio & Live P&L (order-engine-service)
+        - id: order-engine-portfolio
+          uri: lb://order-engine-service
+          predicates:
+            - Path=/api/v1/portfolio/**
 
       # Global Cross-Origin Resource Sharing (CORS) Configuration
       globalcors:

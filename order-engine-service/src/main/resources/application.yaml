@@ -55,3 +55,20 @@ logging:
   level:
     com.paynexus.orderengineservice: DEBUG
     org.springframework.web: INFO
+
+
+# application.yml
+resilience4j:
+  circuitbreaker:
+    instances:
+      walletService:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 5s
+        permittedNumberOfCallsInHalfOpenState: 3
+        registerHealthIndicator: true
+  retry:
+    instances:
+      walletService:
+        maxAttempts: 2
+        waitDuration: 500ms

@@ -29,6 +29,38 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error(ex.getMessage()));
     }
 
+    /** 422 — BUY saga failed (insufficient balance, feign error, etc.) */
+    @ExceptionHandler(OrderFailedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleOrderFailed(OrderFailedException ex) {
+        log.warn("Order failed: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(ApiResponse.error(ex.getMessage()));
+    }
+
+    /** 422 — User tried to SELL more shares than they hold */
+    @ExceptionHandler(InsufficientHoldingsException.class)
+    public ResponseEntity<ApiResponse<Void>> handleInsufficientHoldings(InsufficientHoldingsException ex) {
+        log.warn("Insufficient holdings: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(ApiResponse.error(ex.getMessage()));
+    }
+
+    /** 422 — Transaction PIN is invalid */
+    @ExceptionHandler(InvalidPinException.class)
+    public ResponseEntity<ApiResponse<Void>> handleInvalidPin(InvalidPinException ex) {
+        log.warn("Invalid transaction PIN: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(ApiResponse.error(ex.getMessage()));
+    }
+
+    /** 503 — wallet-service is down or circuit breaker is OPEN */
+    @ExceptionHandler(ServiceUnavailableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleServiceUnavailable(ServiceUnavailableException ex) {
+        log.error("Dependent service unavailable: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ApiResponse.error(ex.getMessage()));
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiResponse<Void>> handleBadRequest(IllegalArgumentException ex) {
         log.warn("Bad request: {}", ex.getMessage());

@@ -1,0 +1,287 @@
+{
+  "info": {
+    "name": "PayNexus - Order Engine Phase 3 (Stock Orders Saga)",
+    "description": "Phase 3 Stock Order Saga tests: BUY/SELL orders, idempotency, error handling, order history",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8083" },
+    { "key": "test_user_id", "value": "a0141d67-c2fb-446b-92f6-3d751461e25a" },
+    { "key": "buy_idempotency_key", "value": "" },
+    { "key": "sell_idempotency_key", "value": "" },
+    { "key": "last_order_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1 - BUY Stock Order (RELIANCE x3)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "pm.collectionVariables.set('buy_idempotency_key', pm.variables.replaceIn('{{$guid}}'));"
+            ],
+            "type": "text/javascript"
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
+              "pm.test('success=true', () => pm.expect(pm.response.json().success).to.be.true);",
+              "pm.test('status is EXECUTED', () => pm.expect(pm.response.json().data.status).to.equal('EXECUTED'));",
+              "pm.test('orderType is BUY', () => pm.expect(pm.response.json().data.orderType).to.equal('BUY'));",
+              "pm.test('symbol is RELIANCE', () => pm.expect(pm.response.json().data.symbol).to.equal('RELIANCE'));",
+              "pm.test('quantity is 3', () => pm.expect(pm.response.json().data.quantity).to.equal(3));",
+              "pm.test('totalValue is positive', () => pm.expect(pm.response.json().data.totalValue).to.be.above(0));",
+              "pm.test('orderId is present', () => { pm.expect(pm.response.json().data.orderId).to.be.a('string'); pm.collectionVariables.set('last_order_id', pm.response.json().data.orderId); });",
+              "pm.test('executedPrice is positive', () => pm.expect(pm.response.json().data.executedPrice).to.be.above(0));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Idempotency-Key", "value": "{{buy_idempotency_key}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{test_user_id}}\",\n  \"symbol\": \"RELIANCE\",\n  \"quantity\": 3,\n  \"transactionPin\": \"123456\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/orders/buy"
+      }
+    },
+    {
+      "name": "2 - BUY Idempotency (Same Key Returns Cached Result)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 201', () => pm.response.to.have.status(201));",
+              "pm.test('Returns same orderId (idempotency working)', () => { const data = pm.response.json().data; pm.expect(data.orderId).to.equal(pm.collectionVariables.get('last_order_id')); });",
+              "pm.test('Status is EXECUTED (cached)', () => pm.expect(pm.response.json().data.status).to.equal('EXECUTED'));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Idempotency-Key", "value": "{{buy_idempotency_key}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{test_user_id}}\",\n  \"symbol\": \"RELIANCE\",\n  \"quantity\": 3,\n  \"transactionPin\": \"123456\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/orders/buy"
+      }
+    },
+    {
+      "name": "3 - Order History (All Orders for User)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('success=true', () => pm.expect(pm.response.json().success).to.be.true);",
+              "pm.test('data is array', () => pm.expect(pm.response.json().data).to.be.an('array'));",
+              "pm.test('at least 1 order returned', () => pm.expect(pm.response.json().data.length).to.be.at.least(1));",
+              "pm.test('orders have required fields', () => { const o = pm.response.json().data[0]; pm.expect(o).to.have.property('orderId'); pm.expect(o).to.have.property('status'); pm.expect(o).to.have.property('orderType'); pm.expect(o).to.have.property('symbol'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/api/v1/orders/{{test_user_id}}/history"
+      }
+    },
+    {
+      "name": "4 - Order History Filtered by Status=EXECUTED",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('data is array', () => pm.expect(pm.response.json().data).to.be.an('array'));",
+              "pm.test('all orders are EXECUTED', () => { pm.response.json().data.forEach(o => pm.expect(o.status).to.equal('EXECUTED')); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/orders/{{test_user_id}}/history?status=EXECUTED",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "orders", "{{test_user_id}}", "history"],
+          "query": [{ "key": "status", "value": "EXECUTED" }]
+        }
+      }
+    },
+    {
+      "name": "5 - SELL Stock Order (RELIANCE x1)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "pm.collectionVariables.set('sell_idempotency_key', pm.variables.replaceIn('{{$guid}}'));"
+            ],
+            "type": "text/javascript"
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
+              "pm.test('success=true', () => pm.expect(pm.response.json().success).to.be.true);",
+              "pm.test('status is EXECUTED', () => pm.expect(pm.response.json().data.status).to.equal('EXECUTED'));",
+              "pm.test('orderType is SELL', () => pm.expect(pm.response.json().data.orderType).to.equal('SELL'));",
+              "pm.test('proceeds is positive', () => pm.expect(pm.response.json().data.proceeds).to.be.above(0));",
+              "pm.test('symbol is RELIANCE', () => pm.expect(pm.response.json().data.symbol).to.equal('RELIANCE'));",
+              "pm.test('quantity is 1', () => pm.expect(pm.response.json().data.quantity).to.equal(1));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Idempotency-Key", "value": "{{sell_idempotency_key}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{test_user_id}}\",\n  \"symbol\": \"RELIANCE\",\n  \"quantity\": 1,\n  \"transactionPin\": \"123456\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/orders/sell"
+      }
+    },
+    {
+      "name": "6 - SELL Error: Insufficient Holdings (422)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 422 Unprocessable Entity', () => pm.response.to.have.status(422));",
+              "pm.test('success=false', () => pm.expect(pm.response.json().success).to.be.false);",
+              "pm.test('error is about holdings (no holdings or insufficient)', () => { const msg = pm.response.json().message.toLowerCase(); pm.expect(msg.includes('insufficient') || msg.includes('no holdings')).to.be.true; });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Idempotency-Key", "value": "{{$guid}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{test_user_id}}\",\n  \"symbol\": \"WIPRO\",\n  \"quantity\": 9999,\n  \"transactionPin\": \"123456\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/orders/sell"
+      }
+    },
+    {
+      "name": "7 - BUY Validation Error: Missing userId (400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 400 Bad Request', () => pm.response.to.have.status(400));",
+              "pm.test('success=false', () => pm.expect(pm.response.json().success).to.be.false);",
+              "pm.test('error message is present', () => pm.expect(pm.response.json().message).to.be.a('string').and.have.length.above(0));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Idempotency-Key", "value": "{{$guid}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"symbol\": \"TCS\",\n  \"quantity\": 1,\n  \"transactionPin\": \"123456\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/orders/buy"
+      }
+    },
+    {
+      "name": "8 - BUY Unsupported Symbol (400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 400 Bad Request', () => pm.response.to.have.status(400));",
+              "pm.test('success=false', () => pm.expect(pm.response.json().success).to.be.false);",
+              "pm.test('error mentions not supported', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('not supported'));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Idempotency-Key", "value": "{{$guid}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{test_user_id}}\",\n  \"symbol\": \"INVALID_STOCK\",\n  \"quantity\": 1,\n  \"transactionPin\": \"123456\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/orders/buy"
+      }
+    },
+    {
+      "name": "9 - Order History: Invalid Status Filter (400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 400 Bad Request', () => pm.response.to.have.status(400));",
+              "pm.test('success=false', () => pm.expect(pm.response.json().success).to.be.false);",
+              "pm.test('error mentions invalid status', () => pm.expect(pm.response.json().message.toLowerCase()).to.include('invalid status'));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/orders/{{test_user_id}}/history?status=BADSTATUS",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "orders", "{{test_user_id}}", "history"],
+          "query": [{ "key": "status", "value": "BADSTATUS" }]
+        }
+      }
+    }
+  ]
+}
