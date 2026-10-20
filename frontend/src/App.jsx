@@ -13,24 +13,50 @@ import {
   ExternalLink,
   Layers,
   Shield,
-  ArrowRight
+  ShieldCheck,
+  ShieldAlert,
+  ArrowRight,
+  LogOut,
+  FileCheck,
+  CheckCircle2,
+  Lock,
+  UserCheck
 } from 'lucide-react';
 
-import { api, DEMO_USERS } from './api/client';
+import { api, DEMO_USERS, ADMIN_USER } from './api/client';
 import DashboardView from './views/DashboardView';
 import PortfolioView from './views/PortfolioView';
 import WalletView from './views/WalletView';
 import AlertsView from './views/AlertsView';
+import AdminView from './views/AdminView';
+import LoginView from './views/LoginView';
 import TradeModal from './components/TradeModal';
 import TransferModal from './components/TransferModal';
 import AlertModal from './components/AlertModal';
+import KycModal from './components/KycModal';
 
 export default function App() {
-  // Navigation: 'dashboard' | 'portfolio' | 'wallet' | 'alerts'
-  const [activeTab, setActiveTab] = useState('dashboard');
+  // Authentication State
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return localStorage.getItem('paynexus_logged_in') === 'true';
+  });
 
-  // Active User: Defaults to Demo User 1 (Trader with active holdings)
-  const [currentUser, setCurrentUser] = useState(DEMO_USERS[0]);
+  // Current User (Defaults to Aarav Sharma if customer, or ADMIN_USER if admin logged in)
+  const [currentUser, setCurrentUser] = useState(() => {
+    const savedRole = localStorage.getItem('paynexus_role');
+    return savedRole === 'ROLE_ADMIN' ? ADMIN_USER : DEMO_USERS[0];
+  });
+
+  const isAdmin = currentUser?.role === 'ROLE_ADMIN' || currentUser?.isAdmin === true || currentUser?.email === 'admin@paynexus.io';
+
+  // Navigation: 'dashboard' | 'portfolio' | 'wallet' | 'alerts' | 'admin'
+  const [activeTab, setActiveTab] = useState(() => {
+    const savedRole = localStorage.getItem('paynexus_role');
+    return savedRole === 'ROLE_ADMIN' ? 'admin' : 'dashboard';
+  });
+
+  const [userProfile, setUserProfile] = useState(null);
+  const [pendingKycCount, setPendingKycCount] = useState(0);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
   // Live State
@@ -50,6 +76,7 @@ export default function App() {
 
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [alertModalOpen, setAlertModalOpen] = useState(false);
+  const [kycModalOpen, setKycModalOpen] = useState(false);
 
   // Toasts
   const [toasts, setToasts] = useState([]);
@@ -61,6 +88,13 @@ export default function App() {
       setToasts(prev => prev.filter(t => t.id !== id));
     }, 4500);
   };
+
+  // Enforce RBAC Tab constraints
+  useEffect(() => {
+    if (!isAdmin && activeTab === 'admin') {
+      setActiveTab('dashboard');
+    }
+  }, [isAdmin, activeTab]);
 
   // ─── 1. Poll Market Data Every 2s ──────────────────────────────────────
   const fetchMarketData = useCallback(async () => {
@@ -85,16 +119,31 @@ export default function App() {
     }
   }, []);
 
-  // ─── 2. Fetch User-Specific Data (Wallet, Portfolio, Alerts) ─────────────
+  // ─── 2. Fetch User-Specific Data Based on Role ──────────────────────────
   const fetchUserData = useCallback(async () => {
     if (!currentUser) return;
 
+    // Admin Persona: Only needs pending KYC queue & system health
+    if (isAdmin) {
+      try {
+        const pendingKycData = await api.getPendingKyc();
+        if (Array.isArray(pendingKycData)) {
+          setPendingKycCount(pendingKycData.length);
+        }
+      } catch (err) {
+        console.warn('Admin pending KYC fetch error:', err.message);
+      }
+      return;
+    }
+
+    // Customer Persona: Wallet, Ledger, Portfolio, Alerts, Profile
     try {
-      const [walletData, ledgerData, portfolioData, alertsData] = await Promise.allSettled([
+      const [walletData, ledgerData, portfolioData, alertsData, profileData] = await Promise.allSettled([
         api.getWallet(currentUser.id),
         api.getLedger(currentUser.id, 0, 15),
         api.getPortfolio(currentUser.id),
-        api.getActiveAlerts(currentUser.id)
+        api.getActiveAlerts(currentUser.id),
+        api.getProfile(currentUser.id)
       ]);
 
       if (walletData.status === 'fulfilled' && walletData.value) {
@@ -110,10 +159,13 @@ export default function App() {
       if (alertsData.status === 'fulfilled' && Array.isArray(alertsData.value)) {
         setAlerts(alertsData.value);
       }
+      if (profileData.status === 'fulfilled' && profileData.value) {
+        setUserProfile(profileData.value);
+      }
     } catch (err) {
       console.warn('User data fetch error:', err.message);
     }
-  }, [currentUser]);
+  }, [currentUser, isAdmin]);
 
   // Initial and recurring data subscriptions
   useEffect(() => {
@@ -123,8 +175,10 @@ export default function App() {
   }, [fetchMarketData]);
 
   useEffect(() => {
-    fetchUserData();
-  }, [fetchUserData]);
+    if (isAuthenticated) {
+      fetchUserData();
+    }
+  }, [fetchUserData, isAuthenticated]);
 
   // Handle Trade Modal Open
   const handleOpenTrade = (symbol = 'RELIANCE', action = 'BUY') => {
@@ -151,6 +205,12 @@ export default function App() {
     fetchUserData();
   };
 
+  // KYC Submission Callback
+  const handleKycSubmitted = () => {
+    addToast('KYC documents submitted to compliance queue! Awaiting Compliance Officer approval.', 'success');
+    fetchUserData();
+  };
+
   // Live formatted time for Stoxy navbar
   const [timeStr, setTimeStr] = useState('');
   useEffect(() => {
@@ -164,6 +224,67 @@ export default function App() {
     const t = setInterval(updateTime, 1000);
     return () => clearInterval(t);
   }, []);
+
+  // ─── If Not Authenticated, Render Dedicated Login View ──────────────────
+  if (!isAuthenticated) {
+    return (
+      <>
+        <LoginView
+          onLoginSuccess={(loggedInUser) => {
+            if (loggedInUser.isAdmin || loggedInUser.role === 'ROLE_ADMIN' || loggedInUser.email === 'admin@paynexus.io') {
+              setCurrentUser(ADMIN_USER);
+              setIsAuthenticated(true);
+              setActiveTab('admin');
+              localStorage.setItem('paynexus_logged_in', 'true');
+              localStorage.setItem('paynexus_role', 'ROLE_ADMIN');
+              addToast(`Authenticated as Compliance Officer (${ADMIN_USER.name})`, 'success');
+              return;
+            }
+
+            const matched = DEMO_USERS.find(u => u.id === loggedInUser.id || u.email.toLowerCase() === loggedInUser.email.toLowerCase());
+            const sessionUser = matched || {
+              id: loggedInUser.id,
+              name: loggedInUser.name,
+              email: loggedInUser.email,
+              role: 'ROLE_USER',
+              isAdmin: false,
+              avatar: (loggedInUser.name || 'US').substring(0, 2).toUpperCase()
+            };
+            setCurrentUser(sessionUser);
+            setIsAuthenticated(true);
+            setActiveTab('dashboard');
+            localStorage.setItem('paynexus_logged_in', 'true');
+            localStorage.setItem('paynexus_role', 'ROLE_USER');
+            addToast(`Authenticated successfully as ${sessionUser.name}`, 'success');
+          }}
+          onSkipToGuest={() => {
+            setCurrentUser(DEMO_USERS[0]);
+            setIsAuthenticated(true);
+            setActiveTab('dashboard');
+            localStorage.setItem('paynexus_logged_in', 'true');
+            localStorage.setItem('paynexus_role', 'ROLE_USER');
+            addToast('Logged in as Aarav Sharma (Active Portfolio)', 'success');
+          }}
+        />
+
+        {/* Toast Container for Login view */}
+        <div className="toast-container">
+          {toasts.map(t => (
+            <div key={t.id} className={`toast toast-${t.type}`}>
+              {t.type === 'success' ? (
+                <CheckCircle size={18} color="var(--bullish)" />
+              ) : (
+                <AlertCircle size={18} color="var(--bearish)" />
+              )}
+              <span>{t.message}</span>
+            </div>
+          ))}
+        </div>
+      </>
+    );
+  }
+
+  const kycStatus = userProfile?.kycStatus || (currentUser?.typeDescription?.includes('SUBMITTED') ? 'SUBMITTED' : (currentUser?.typeDescription?.includes('Verified') ? 'VERIFIED' : 'PENDING'));
 
   return (
     <div>
@@ -203,43 +324,85 @@ export default function App() {
       {/* 2. Top Navbar */}
       <header className="top-navbar">
         <div className="brand-section">
-          <div className="brand-logo" onClick={() => setActiveTab('dashboard')}>
+          <div className="brand-logo" onClick={() => setActiveTab(isAdmin ? 'admin' : 'dashboard')} style={{ cursor: 'pointer' }}>
             Stoxy<span className="dot">.</span>
             <span style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-muted)' }}>by PayNexus</span>
           </div>
-          <span className="brand-subtext">NSE LIVE</span>
+          <span className="brand-subtext" style={{ color: isAdmin ? 'var(--accent-orange)' : 'var(--text-muted)' }}>
+            {isAdmin ? 'COMPLIANCE PORTAL' : 'NSE LIVE'}
+          </span>
         </div>
 
-        {/* Center Tabs */}
+        {/* Center Tabs: Role-Based Access Control */}
         <nav className="nav-links">
-          <button
-            className={`nav-link-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
-            onClick={() => setActiveTab('dashboard')}
-          >
-            <LayoutDashboard size={15} />
-            Market
-          </button>
-          <button
-            className={`nav-link-btn ${activeTab === 'portfolio' ? 'active' : ''}`}
-            onClick={() => setActiveTab('portfolio')}
-          >
-            <PieChart size={15} />
-            Portfolio
-          </button>
-          <button
-            className={`nav-link-btn ${activeTab === 'wallet' ? 'active' : ''}`}
-            onClick={() => setActiveTab('wallet')}
-          >
-            <Wallet size={15} />
-            Wallet & Ledger
-          </button>
-          <button
-            className={`nav-link-btn ${activeTab === 'alerts' ? 'active' : ''}`}
-            onClick={() => setActiveTab('alerts')}
-          >
-            <Bell size={15} />
-            Watchlist & Alerts
-          </button>
+          {isAdmin ? (
+            /* ADMIN NAVIGATION TABS */
+            <>
+              <button
+                className={`nav-link-btn ${activeTab === 'admin' ? 'active' : ''}`}
+                onClick={() => setActiveTab('admin')}
+                style={{
+                  borderColor: activeTab === 'admin' ? 'var(--accent-orange)' : 'transparent',
+                  color: activeTab === 'admin' ? 'var(--accent-orange)' : 'var(--text-secondary)'
+                }}
+              >
+                <Shield size={15} />
+                Compliance Console
+                {pendingKycCount > 0 && (
+                  <span style={{
+                    background: 'var(--accent-orange)',
+                    color: '#fff',
+                    fontSize: '10px',
+                    padding: '1px 5px',
+                    borderRadius: '10px',
+                    fontWeight: '700'
+                  }}>
+                    {pendingKycCount}
+                  </span>
+                )}
+              </button>
+
+              <button
+                className={`nav-link-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
+                onClick={() => setActiveTab('dashboard')}
+              >
+                <LayoutDashboard size={15} />
+                Market Feeds Monitor
+              </button>
+            </>
+          ) : (
+            /* CUSTOMER / TRADER NAVIGATION TABS */
+            <>
+              <button
+                className={`nav-link-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
+                onClick={() => setActiveTab('dashboard')}
+              >
+                <LayoutDashboard size={15} />
+                Market
+              </button>
+              <button
+                className={`nav-link-btn ${activeTab === 'portfolio' ? 'active' : ''}`}
+                onClick={() => setActiveTab('portfolio')}
+              >
+                <PieChart size={15} />
+                Portfolio
+              </button>
+              <button
+                className={`nav-link-btn ${activeTab === 'wallet' ? 'active' : ''}`}
+                onClick={() => setActiveTab('wallet')}
+              >
+                <Wallet size={15} />
+                Wallet & Ledger
+              </button>
+              <button
+                className={`nav-link-btn ${activeTab === 'alerts' ? 'active' : ''}`}
+                onClick={() => setActiveTab('alerts')}
+              >
+                <Bell size={15} />
+                Watchlist & Alerts
+              </button>
+            </>
+          )}
         </nav>
 
         {/* Right Controls */}
@@ -270,12 +433,20 @@ export default function App() {
             <div
               className="user-selector"
               onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+              style={{
+                border: isAdmin ? '1px solid rgba(255, 79, 0, 0.4)' : '1px solid var(--border-card)',
+                background: isAdmin ? 'rgba(255, 79, 0, 0.08)' : 'var(--bg-surface)'
+              }}
             >
-              <div className="user-avatar">{currentUser.avatar}</div>
+              <div className="user-avatar" style={{ background: isAdmin ? 'var(--accent-orange)' : undefined, color: '#fff' }}>
+                {currentUser.avatar || (isAdmin ? 'AD' : 'US')}
+              </div>
               <div style={{ textAlign: 'left', lineHeight: '1.2' }}>
-                <div style={{ fontSize: '12px', fontWeight: '600', color: '#fff' }}>{currentUser.name.split(' ')[0]}</div>
-                <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                  ₹{wallet ? wallet.availableBalance.toFixed(0) : '...'}
+                <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-primary)' }}>
+                  {currentUser.name.split(' ')[0]}
+                </div>
+                <div style={{ fontSize: '10px', color: isAdmin ? 'var(--accent-orange)' : 'var(--text-muted)' }}>
+                  {isAdmin ? 'ADMIN' : (wallet ? `₹${Number(wallet.availableBalance).toFixed(0)}` : '...')}
                 </div>
               </div>
             </div>
@@ -289,41 +460,173 @@ export default function App() {
                 border: '1px solid var(--border-card)',
                 borderRadius: 'var(--radius-lg)',
                 padding: '8px',
-                width: '260px',
-                boxShadow: '0 10px 25px rgba(0,0,0,0.6)',
+                width: '280px',
+                boxShadow: '0 12px 30px rgba(0,0,0,0.7)',
                 zIndex: 60
               }}>
-                <div style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', padding: '6px 10px', fontWeight: '700' }}>
-                  Switch Demo Account
+                {/* Active user header inside dropdown */}
+                <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border-subtle)', marginBottom: '6px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>{currentUser.name}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{currentUser.email}</div>
+                  
+                  {/* Role / KYC Status Pill in Dropdown */}
+                  <div style={{
+                    marginTop: '6px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    fontSize: '10.5px',
+                    fontWeight: '700',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    background: isAdmin ? 'rgba(255, 79, 0, 0.15)' : (kycStatus === 'VERIFIED' ? 'var(--bullish-soft)' : 'rgba(255, 79, 0, 0.12)'),
+                    color: isAdmin ? 'var(--accent-orange)' : (kycStatus === 'VERIFIED' ? 'var(--bullish)' : 'var(--accent-orange)')
+                  }}>
+                    {isAdmin ? <Shield size={12} /> : (kycStatus === 'VERIFIED' ? <ShieldCheck size={12} /> : <FileCheck size={12} />)}
+                    {isAdmin ? 'ROLE: COMPLIANCE OFFICER' : `KYC: ${kycStatus}`}
+                  </div>
                 </div>
-                {DEMO_USERS.map(u => (
+
+                {/* Quick actions for customer */}
+                {!isAdmin && kycStatus !== 'VERIFIED' && (
                   <div
-                    key={u.id}
                     onClick={() => {
-                      setCurrentUser(u);
+                      setKycModalOpen(true);
                       setUserDropdownOpen(false);
                     }}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '10px',
+                      gap: '8px',
+                      padding: '7px 10px',
+                      borderRadius: 'var(--radius-md)',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      color: 'var(--accent-orange)',
+                      background: 'rgba(255, 79, 0, 0.08)',
+                      marginBottom: '6px'
+                    }}
+                  >
+                    <FileCheck size={14} /> Submit / Update KYC
+                  </div>
+                )}
+
+                {/* Switch to Admin Shortcut for quick demo evaluation */}
+                {!isAdmin && (
+                  <div
+                    onClick={() => {
+                      setCurrentUser(ADMIN_USER);
+                      setActiveTab('admin');
+                      localStorage.setItem('paynexus_role', 'ROLE_ADMIN');
+                      setUserDropdownOpen(false);
+                      addToast('Switched to Compliance Officer Portal', 'info');
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '7px 10px',
+                      borderRadius: 'var(--radius-md)',
+                      cursor: 'pointer',
+                      fontSize: '11.5px',
+                      color: 'var(--accent-orange)',
+                      background: 'rgba(255, 79, 0, 0.05)',
+                      border: '1px dashed rgba(255, 79, 0, 0.3)',
+                      marginBottom: '8px'
+                    }}
+                  >
+                    <Shield size={13} /> Switch to Compliance Admin →
+                  </div>
+                )}
+
+                {/* Switch to Customer Shortcut if currently Admin */}
+                {isAdmin && (
+                  <div
+                    onClick={() => {
+                      setCurrentUser(DEMO_USERS[0]);
+                      setActiveTab('dashboard');
+                      localStorage.setItem('paynexus_role', 'ROLE_USER');
+                      setUserDropdownOpen(false);
+                      addToast('Switched to Customer Trading Portal (Aarav)', 'info');
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '7px 10px',
+                      borderRadius: 'var(--radius-md)',
+                      cursor: 'pointer',
+                      fontSize: '11.5px',
+                      color: 'var(--text-secondary)',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      marginBottom: '8px'
+                    }}
+                  >
+                    <UserCheck size={13} /> Switch to Customer (Aarav) →
+                  </div>
+                )}
+
+                {!isAdmin && (
+                  <>
+                    <div style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', padding: '4px 10px', fontWeight: '700' }}>
+                      Switch Customer Account
+                    </div>
+                    {DEMO_USERS.map(u => (
+                      <div
+                        key={u.id}
+                        onClick={() => {
+                          setCurrentUser(u);
+                          setUserDropdownOpen(false);
+                          addToast(`Switched account to ${u.name}`, 'info');
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          padding: '7px 10px',
+                          borderRadius: 'var(--radius-md)',
+                          cursor: 'pointer',
+                          background: currentUser.id === u.id ? 'var(--accent-orange-soft)' : 'transparent',
+                          color: currentUser.id === u.id ? 'var(--accent-orange)' : 'var(--text-primary)',
+                          fontSize: '12px'
+                        }}
+                      >
+                        <div className="user-avatar" style={{ width: '22px', height: '22px', fontSize: '9.5px' }}>
+                          {u.avatar}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: '600' }}>{u.name}</div>
+                          <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{u.typeDescription || u.role}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {/* Sign Out Action */}
+                <div style={{ borderTop: '1px solid var(--border-subtle)', marginTop: '6px', paddingTop: '6px' }}>
+                  <div
+                    onClick={() => {
+                      setIsAuthenticated(false);
+                      localStorage.setItem('paynexus_logged_in', 'false');
+                      localStorage.removeItem('paynexus_role');
+                      setUserDropdownOpen(false);
+                      addToast('Signed out. Return to login anytime.', 'info');
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
                       padding: '8px 10px',
                       borderRadius: 'var(--radius-md)',
                       cursor: 'pointer',
-                      background: currentUser.id === u.id ? 'var(--accent-orange-soft)' : 'transparent',
-                      color: currentUser.id === u.id ? 'var(--accent-orange)' : 'var(--text-primary)',
-                      fontSize: '12.5px'
+                      fontSize: '12px',
+                      color: 'var(--bearish)'
                     }}
                   >
-                    <div className="user-avatar" style={{ width: '24px', height: '24px', fontSize: '10px' }}>
-                      {u.avatar}
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: '600' }}>{u.name}</div>
-                      <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{u.role}</div>
-                    </div>
+                    <LogOut size={13} /> Sign Out (Back to Login)
                   </div>
-                ))}
+                </div>
               </div>
             )}
           </div>
@@ -332,69 +635,103 @@ export default function App() {
 
       {/* 3. Main Body Layout (Sidebar + Content Viewport) */}
       <div className="app-layout">
-        {/* Left Sidebar */}
+        {/* Left Sidebar: Role-Based Items */}
         <aside className="sidebar">
           <div>
-            <div className="sidebar-heading">Navigation</div>
+            <div className="sidebar-heading">
+              {isAdmin ? 'Compliance Operations' : 'Navigation'}
+            </div>
+            
             <div className="sidebar-menu">
-              <button
-                className={`sidebar-item ${activeTab === 'dashboard' ? 'active' : ''}`}
-                onClick={() => setActiveTab('dashboard')}
-              >
-                <LayoutDashboard size={17} />
-                Dashboard
-              </button>
+              {isAdmin ? (
+                /* ADMIN SIDEBAR MENU */
+                <>
+                  <button
+                    className={`sidebar-item ${activeTab === 'admin' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('admin')}
+                  >
+                    <Shield size={17} />
+                    Compliance & KYC Review
+                    {pendingKycCount > 0 && (
+                      <span className="sidebar-badge" style={{ background: 'var(--accent-orange)' }}>
+                        {pendingKycCount}
+                      </span>
+                    )}
+                  </button>
 
-              <button
-                className={`sidebar-item ${activeTab === 'portfolio' ? 'active' : ''}`}
-                onClick={() => setActiveTab('portfolio')}
-              >
-                <PieChart size={17} />
-                Portfolio
-                {holdings.length > 0 && (
-                  <span className="sidebar-badge">{holdings.length}</span>
-                )}
-              </button>
+                  <button
+                    className={`sidebar-item ${activeTab === 'dashboard' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('dashboard')}
+                  >
+                    <LayoutDashboard size={17} />
+                    Market Feeds Monitor
+                  </button>
+                </>
+              ) : (
+                /* CUSTOMER SIDEBAR MENU */
+                <>
+                  <button
+                    className={`sidebar-item ${activeTab === 'dashboard' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('dashboard')}
+                  >
+                    <LayoutDashboard size={17} />
+                    Dashboard
+                  </button>
 
-              <button
-                className={`sidebar-item ${activeTab === 'wallet' ? 'active' : ''}`}
-                onClick={() => setActiveTab('wallet')}
-              >
-                <Wallet size={17} />
-                Digital Wallet
-              </button>
+                  <button
+                    className={`sidebar-item ${activeTab === 'portfolio' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('portfolio')}
+                  >
+                    <PieChart size={17} />
+                    Portfolio
+                    {holdings.length > 0 && (
+                      <span className="sidebar-badge">{holdings.length}</span>
+                    )}
+                  </button>
 
-              <button
-                className={`sidebar-item ${activeTab === 'alerts' ? 'active' : ''}`}
-                onClick={() => setActiveTab('alerts')}
-              >
-                <Bell size={17} />
-                Precision Alerts
-                {alerts.length > 0 && (
-                  <span className="sidebar-badge">{alerts.length}</span>
-                )}
-              </button>
+                  <button
+                    className={`sidebar-item ${activeTab === 'wallet' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('wallet')}
+                  >
+                    <Wallet size={17} />
+                    Digital Wallet
+                  </button>
+
+                  <button
+                    className={`sidebar-item ${activeTab === 'alerts' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('alerts')}
+                  >
+                    <Bell size={17} />
+                    Precision Alerts
+                    {alerts.length > 0 && (
+                      <span className="sidebar-badge">{alerts.length}</span>
+                    )}
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
           <div>
             <div style={{
-              background: 'rgba(255, 87, 34, 0.08)',
-              border: '1px solid rgba(255, 87, 34, 0.2)',
+              background: isAdmin ? 'rgba(255, 79, 0, 0.08)' : 'rgba(255, 79, 0, 0.06)',
+              border: `1px solid ${isAdmin ? 'rgba(255, 79, 0, 0.3)' : 'rgba(255, 79, 0, 0.15)'}`,
               borderRadius: 'var(--radius-md)',
               padding: '12px',
               marginBottom: '16px'
             }}>
               <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent-orange)', marginBottom: '4px' }}>
-                Distributed Sagas
+                {isAdmin ? 'Privileged Security' : 'Distributed Sagas'}
               </div>
               <div style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
-                Spring Cloud Gateway :8080 routing to Wallet :8082 & Order Engine :8083.
+                {isAdmin
+                  ? 'Authorized for regulatory identity approval and fraud prevention wallet freeze holds.'
+                  : 'Spring Cloud Gateway :8080 routing to Wallet :8082 & Order Engine :8083.'}
               </div>
             </div>
 
             <div className="sidebar-footer">
-              <span>v2.0 • Live Sim</span>
+              <span>{isAdmin ? 'Role: ROLE_ADMIN' : 'v2.0 • Live Sim'}</span>
               <span style={{ color: 'var(--bullish)' }}>• All Systems OK</span>
             </div>
           </div>
@@ -408,11 +745,11 @@ export default function App() {
               priceHistory={priceHistory}
               feedStatus={feedStatus}
               onRefresh={fetchMarketData}
-              onOpenTrade={handleOpenTrade}
+              onOpenTrade={isAdmin ? undefined : handleOpenTrade}
             />
           )}
 
-          {activeTab === 'portfolio' && (
+          {!isAdmin && activeTab === 'portfolio' && (
             <PortfolioView
               portfolio={portfolio}
               holdings={holdings}
@@ -421,17 +758,20 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'wallet' && (
+          {!isAdmin && activeTab === 'wallet' && (
             <WalletView
               user={currentUser}
+              userProfile={userProfile}
               wallet={wallet}
               ledger={ledger}
               onRefresh={fetchUserData}
               onOpenTransfer={() => setTransferModalOpen(true)}
+              onOpenKyc={() => setKycModalOpen(true)}
+              onNavigateAdmin={() => setActiveTab('admin')}
             />
           )}
 
-          {activeTab === 'alerts' && (
+          {!isAdmin && activeTab === 'alerts' && (
             <AlertsView
               alerts={alerts}
               prices={prices}
@@ -439,38 +779,60 @@ export default function App() {
               onRefresh={fetchUserData}
             />
           )}
+
+          {isAdmin && activeTab === 'admin' && (
+            <AdminView
+              onKycActionSuccess={() => {
+                fetchUserData();
+                addToast('Administrative action executed successfully!', 'success');
+              }}
+            />
+          )}
         </main>
       </div>
 
-      {/* 4. Interactive Modals */}
-      <TradeModal
-        isOpen={tradeModalOpen}
-        onClose={() => setTradeModalOpen(false)}
-        initialSymbol={selectedStock}
-        initialAction={selectedAction}
-        prices={prices}
-        user={currentUser}
-        wallet={wallet}
-        holdings={holdings}
-        onTradeSuccess={handleTradeSuccess}
-      />
+      {/* 4. Interactive Modals (Customers Only) */}
+      {!isAdmin && (
+        <>
+          <TradeModal
+            isOpen={tradeModalOpen}
+            onClose={() => setTradeModalOpen(false)}
+            initialSymbol={selectedStock}
+            initialAction={selectedAction}
+            prices={prices}
+            user={currentUser}
+            wallet={wallet}
+            holdings={holdings}
+            onTradeSuccess={handleTradeSuccess}
+          />
 
-      <TransferModal
-        isOpen={transferModalOpen}
-        onClose={() => setTransferModalOpen(false)}
-        currentUser={currentUser}
-        wallet={wallet}
-        onTransferSuccess={handleTransferSuccess}
-      />
+          <TransferModal
+            isOpen={transferModalOpen}
+            onClose={() => setTransferModalOpen(false)}
+            currentUser={currentUser}
+            wallet={wallet}
+            onTransferSuccess={handleTransferSuccess}
+          />
 
-      <AlertModal
-        isOpen={alertModalOpen}
-        onClose={() => setAlertModalOpen(false)}
-        userId={currentUser.id}
-        prices={prices}
-        initialSymbol={selectedStock}
-        onAlertCreated={handleAlertCreated}
-      />
+          <AlertModal
+            isOpen={alertModalOpen}
+            onClose={() => setAlertModalOpen(false)}
+            userId={currentUser.id}
+            prices={prices}
+            initialSymbol={selectedStock}
+            onAlertCreated={handleAlertCreated}
+          />
+
+          <KycModal
+            isOpen={kycModalOpen}
+            onClose={() => setKycModalOpen(false)}
+            userId={currentUser.id}
+            userName={currentUser.name}
+            currentStatus={kycStatus}
+            onKycSubmitted={handleKycSubmitted}
+          />
+        </>
+      )}
 
       {/* 5. Toast Notifications Container */}
       <div className="toast-container">

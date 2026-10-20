@@ -14,6 +14,13 @@ export default defineConfig({
           Origin: 'http://localhost:8080',
         },
       },
+      '/admin': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        headers: {
+          Origin: 'http://localhost:8080',
+        },
+      },
     },
   },
 })

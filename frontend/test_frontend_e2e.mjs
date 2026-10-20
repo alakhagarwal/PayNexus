@@ -323,6 +323,100 @@ async function runAllTests() {
   assert(profRes.data?.data?.email === 'test1@paynexus.io', 'User email verified');
 
   // ──────────────────────────────────────────────────────────────────────────
+  // 8. AUTHENTICATION & RECRUITER 1-CLICK ONBOARDING
+  // ──────────────────────────────────────────────────────────────────────────
+  console.log('\n🔐 [SUITE 8] Authentication & Recruiter 1-Click Onboarding:');
+  
+  // 8.1 Login with Aarav Sharma
+  const loginRes = await request('/api/v1/users/login', {
+    method: 'POST',
+    body: JSON.stringify({ email: 'aarav.sharma@paynexus.io', password: 'SecurePass123!' })
+  });
+  assert(loginRes.ok && loginRes.status === 200, 'POST /api/v1/users/login returns 200 for Aarav Sharma');
+  assert(loginRes.data?.data?.userId !== undefined, `User authenticated with ID: ${loginRes.data?.data?.userId}`);
+  assert(loginRes.data?.data?.name === 'Aarav Sharma', 'Returned user name matches credentials');
+
+  // 8.2 Login with invalid password
+  const badLoginRes = await request('/api/v1/users/login', {
+    method: 'POST',
+    body: JSON.stringify({ email: 'aarav.sharma@paynexus.io', password: 'WrongPassword999!' })
+  });
+  assert(badLoginRes.status === 404 || badLoginRes.status === 400 || badLoginRes.status === 401, 'POST /api/v1/users/login rejects incorrect password');
+
+  // 8.3 Register a brand new candidate account
+  const newEmail = `recruiter_${Date.now()}@paynexus.io`;
+  const registerRes = await request('/api/v1/users/register', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Candidate Reviewer', email: newEmail, password: 'SecurePass123!' })
+  });
+  assert(registerRes.status === 201, 'POST /api/v1/users/register returns 201 CREATED');
+  const newUserId = registerRes.data?.data?.userId;
+  assert(newUserId !== undefined, `New candidate registered with ID: ${newUserId}`);
+  assert(registerRes.data?.data?.walletId !== undefined, 'User digital wallet atomically provisioned');
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // 9. KYC VERIFICATION LIFECYCLE & ADMIN OPERATIONS CONSOLE
+  // ──────────────────────────────────────────────────────────────────────────
+  console.log('\n🛡️ [SUITE 9] KYC Lifecycle & Admin Operations:');
+
+  // 9.1 Check initial KYC status (PENDING / NOT_SUBMITTED)
+  const newProfRes = await request(`/api/v1/users/${newUserId}/profile`);
+  assert(newProfRes.ok && newProfRes.status === 200, 'GET /api/v1/users/{userId}/profile returns 200');
+  assert(newProfRes.data?.data?.kycStatus === 'PENDING' || newProfRes.data?.data?.kycStatus === 'NOT_SUBMITTED', 'New account KYC is unverified');
+
+  // 9.2 Submit KYC with valid individual PAN ('P' as 4th char), Aadhaar last 4, age >= 18
+  const kycSubmitRes = await request(`/api/v1/users/${newUserId}/kyc`, {
+    method: 'POST',
+    body: JSON.stringify({
+      panNumber: 'ABCPE1234F',
+      aadhaarLastFour: '5678',
+      dateOfBirth: '1996-03-25'
+    })
+  });
+  assert(kycSubmitRes.ok && kycSubmitRes.status === 200, 'POST /api/v1/users/{userId}/kyc returns 200 OK');
+
+  // 9.3 Verify profile status transitioned to SUBMITTED
+  const submittedProfRes = await request(`/api/v1/users/${newUserId}/profile`);
+  assert(submittedProfRes.data?.data?.kycStatus === 'SUBMITTED', 'User KYC status transitioned to SUBMITTED');
+
+  // 9.4 Admin pending queue contains candidate
+  const pendingQueueRes = await request('/admin/kyc/pending');
+  assert(pendingQueueRes.ok && pendingQueueRes.status === 200, 'GET /admin/kyc/pending returns 200 OK');
+  const pendingList = pendingQueueRes.data?.data || [];
+  const candidateInQueue = pendingList.some(item => item.userId === newUserId);
+  assert(candidateInQueue, 'Candidate application appears in Admin pending queue');
+
+  // 9.5 Admin approves candidate KYC
+  const approveRes = await request(`/admin/kyc/${newUserId}/approve?remarks=Candidate+Verified+By+Admin`, {
+    method: 'PUT'
+  });
+  assert(approveRes.ok && approveRes.status === 200, 'PUT /admin/kyc/{userId}/approve returns 200 OK');
+
+  // 9.6 Verify profile status transitioned to VERIFIED
+  const verifiedProfRes = await request(`/api/v1/users/${newUserId}/profile`);
+  assert(verifiedProfRes.data?.data?.kycStatus === 'VERIFIED', 'User KYC status transitioned to VERIFIED');
+
+  // 9.7 Admin Risk Control: Freeze Wallet
+  const freezeRes = await request(`/admin/users/${newUserId}/freeze`, {
+    method: 'PUT'
+  });
+  assert(freezeRes.ok && freezeRes.status === 200, 'PUT /admin/users/{userId}/freeze returns 200 OK');
+
+  const frozenWalletRes = await request(`/api/v1/wallet/${newUserId}`);
+  const isFrozen = frozenWalletRes.data?.data?.frozen ?? frozenWalletRes.data?.data?.isFrozen;
+  assert(isFrozen === true, 'Wallet verified as FROZEN');
+
+  // 9.8 Admin Risk Control: Unfreeze Wallet
+  const unfreezeRes = await request(`/admin/users/${newUserId}/unfreeze`, {
+    method: 'PUT'
+  });
+  assert(unfreezeRes.ok && unfreezeRes.status === 200, 'PUT /admin/users/{userId}/unfreeze returns 200 OK');
+
+  const unfrozenWalletRes = await request(`/api/v1/wallet/${newUserId}`);
+  const isUnfrozen = (unfrozenWalletRes.data?.data?.frozen ?? unfrozenWalletRes.data?.data?.isFrozen) === false;
+  assert(isUnfrozen, 'Wallet verified as ACTIVE (UNFROZEN)');
+
+  // ──────────────────────────────────────────────────────────────────────────
   // SUMMARY
   // ──────────────────────────────────────────────────────────────────────────
   console.log('\n================================================================');
