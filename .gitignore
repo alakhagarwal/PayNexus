@@ -29,3 +29,9 @@ mongo_data/
 # ── Implementation Guides ──────────────────────────────────
 PAYNEXUS_IMPLEMENTATION_GUIDE.md
 paynexus_complete_guide.md
+
+# ── Frontend & Test Artifacts ──────────────────────────────
+.playwright-mcp/
+frontend/dist/
+frontend/node_modules/
+
