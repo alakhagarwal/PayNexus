@@ -152,43 +152,6 @@ Once initialized:
 
 ---
 
-## 👥 Pre-Configured Demo Accounts for Evaluators
-
-The login page includes **1-Click Auto-Fill** buttons for rapid recruiter testing:
-
-| Persona | Email | Password | Role & Purpose |
-| :--- | :--- | :--- | :--- |
-| **Aarav Sharma** | `aarav.sharma@paynexus.io` | `SecurePass123!` | **Verified Investor**: Active portfolio, ₹53,000+ balance, live ledger history. |
-| **Rohan Verma** | `rohan.verma@paynexus.io` | `SecurePass123!` | **KYC In Review**: Status `SUBMITTED`, queued for admin approval. |
-| **Priya Patel** | `priya.patel@paynexus.io` | `SecurePass123!` | **Active P2P Trader**: Partner account for testing live money transfers. |
-| **Vikrant Roy** | `admin@paynexus.io` | `AdminPass123!` | **Compliance Officer (`ROLE_ADMIN`)**: Full Admin Console, KYC approvals & wallet freezing. |
-
-> 💡 **Quick Demo Access**: You can also click **"Skip login & continue as Guest Demo Trader"** on the login screen to enter the trading terminal instantly.
-
----
-
-## 🧪 Automated Testing & Quality Verification
-
-PayNexus includes an automated end-to-end regression suite covering all 9 operational layers:
-
-```powershell
-cd frontend
-node test_frontend_e2e.mjs
-```
-
-### Verified Test Coverage (74/74 Passed — 100% Success Rate):
-- ✅ **Suite 1: Frontend & Dev Server Integrity** (HTTP 200, entrypoints, mounting)
-- ✅ **Suite 2: Real-Time Market Data Engine** (10 NSE tickers, Redis cache, simulation ticks, 404 guards)
-- ✅ **Suite 3: Digital Wallet & Double-Entry Ledger** (Balance verification, P2P transfers, PIN checks, limit caps)
-- ✅ **Suite 4: Portfolio & Mark-to-Market P&L** (Unrealized profit/loss resolution, holdings breakdown)
-- ✅ **Suite 5: Distributed Sagas (BUY / SELL)** (HOLD $\to$ SETTLE lifecycle, idempotency deduping, balance validation)
-- ✅ **Suite 6: Precision Price Alerts** (ABOVE / BELOW trigger registration, soft-cancellation)
-- ✅ **Suite 7: User Profile & Security** (Sensitive credential isolation, hashed PIN verification)
-- ✅ **Suite 8: Authentication & Onboarding** (Login validation, rejection of bad credentials, atomic user/wallet creation)
-- ✅ **Suite 9: KYC Compliance & Admin Risk Engine** (PAN validation, age verification, approval workflow, wallet freeze/unfreeze)
-
----
-
 ## 📡 REST API Reference Summary
 
 All requests route through the **API Gateway** on port `8080`:
@@ -223,17 +186,6 @@ PUT    /admin/kyc/{userId}/reject        # Reject application with compliance re
 PUT    /admin/users/{userId}/freeze      # Freeze user wallet for fraud hold
 PUT    /admin/users/{userId}/unfreeze    # Restore wallet to active state
 ```
-
----
-
-## 💬 Interview Talking Points & Architecture Decisions
-
-| Question | Architectural Rationale in PayNexus |
-| :--- | :--- |
-| **Why Saga instead of 2PC?** | 2PC holds locks across network partitions and creates single points of failure. PayNexus uses an orchestrated Saga where each local transaction commits immediately; if a downstream step fails, an automated compensating transaction rolls back reserved balances without holding global DB locks. |
-| **Why Double-Entry Bookkeeping?** | Traditional systems overwrite a single `balance` integer, which makes detecting phantom debits or concurrency corruption impossible. Double-entry recording ensures the sum of all credits equals all debits, providing a cryptographically verifiable audit trail. |
-| **How is concurrency handled during P2P?** | Concurrent transfers between Alice and Bob can cause deadlocks if Alice locks `[Alice, Bob]` while Bob locks `[Bob, Alice]`. PayNexus sorts lock identifiers lexicographically before acquiring Redisson MultiLocks, eliminating cyclic lock dependencies. |
-| **How does Idempotency work?** | Clients generate a UUID v4 `X-Idempotency-Key`. The Gateway/Service performs a Redis `SETNX key value EX 120`. If the key exists, the request returns the cached result without re-executing debit/credit logic. |
 
 ---
 
